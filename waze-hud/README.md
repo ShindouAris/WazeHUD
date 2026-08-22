@@ -134,6 +134,7 @@ The supplied `waze-hud-link-sdk-ai-bundle.md` is normative. The implementation u
 - `alrs` is explicitly requested and capped at four entries; its `alrs[0]` mirror is removed from the normalized upcoming list
 - Equal-distance `SPEED_DROP` alerts are normalized with the higher `v` first while preserving producer near-to-far order for every other case
 - Alert UI shows up to two upcoming items; an active `avg=1` no-passing zone takes the dominant slot and reduces the upcoming row to one centered item
+- Alert distance text is blue for valid distances below 500 m and keeps its normal color at 500 m or farther
 - `avg` is rendered as a Vietnamese no-passing zone, never as an average-speed camera
 
 The state decoder supports `nav`, `spd`, `lim`, `over`, `trn`, `trn2`, `dst`, `exit`, `st`, `st2`, `eta`, `rmin`, `rm`, `rkm`, `avg`, `avgL`, `avgR`, `avgP`, `alr`, `alrD`, `alrV`, `alrs`, and `ts`. It implements maneuver codes `0..19` and alert codes `0..74`. Prefer exact `rm` meters for display and use `rkm` only as the legacy fallback.
@@ -147,10 +148,11 @@ When the producer advertises `device_config`, the HUD publishes five controls:
 | `brightness` | Slider | 10–100 in steps of 5 |
 | `theme` | Selection | `auto`, `day`, or `night` |
 | `show_street` | Toggle | Boolean |
+| `mirror_hud` | Toggle | Horizontal windshield-reflection mirror, persisted in NVS |
 | `offset_x` | Integer | −5 through 5 |
 | `offset_y` | Integer | −5 through 5 |
 
-The firmware stages every value, rejects missing/duplicate/unknown IDs, persists the complete candidate to NVS, increments the schema revision, and only then sends a successful `cfg_ack`. A repeated commit receives the previous transaction result instead of applying twice.
+The six-item schema is revision 2. Firmware with stored revision 1 migrates to revision 2 with mirroring disabled while preserving the other settings. The firmware stages every value, rejects missing/duplicate/unknown IDs, persists the complete candidate to NVS, increments the schema revision, and only then sends a successful `cfg_ack`. A repeated commit receives the previous transaction result instead of applying twice.
 
 ## Diagnose hardware
 
@@ -168,4 +170,4 @@ Useful production log tags are `APP`, `DISPLAY`, `BLE`, `HLP`, `STATE`, and `CON
 
 ## Build evidence
 
-The production configuration was compiled locally with ESP-IDF 5.5.5 and `idf.py set-target esp32s3 && idf.py build`. With the expanded HLP/1 asset set, the application binary is `0x155140` bytes, leaving 56% of each 3 MB OTA slot available. Display initialization, BLE discovery, MTU negotiation, HLP handshake, dynamic configuration, live `st` street data, and sustained state/heartbeat operation were exercised on the attached T-Display-S3 and Waze producer.
+The production configuration was compiled locally with ESP-IDF 5.5.5 and `idf.py set-target esp32s3 && idf.py build`. With the expanded HLP/1 asset set, the application binary is `0x1552f0` bytes, leaving 56% of each 3 MB OTA slot available. The mock build is `0x10b310`. Display initialization, BLE discovery, MTU negotiation, HLP handshake, dynamic configuration, live `st` street data, and sustained state/heartbeat operation were exercised on the attached T-Display-S3 and Waze producer.

@@ -13,9 +13,10 @@ struct DeviceSettings {
     uint8_t brightness{70};
     UiTheme theme{UiTheme::Auto};
     bool showStreet{true};
+    bool mirrorHud{false};
     int8_t offsetX{0};
     int8_t offsetY{0};
-    uint32_t revision{1};
+    uint32_t revision{2};
 };
 
 using HlpSendLine = void (*)(const char *line, void *context);

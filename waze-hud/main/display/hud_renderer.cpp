@@ -37,7 +37,12 @@ bool alertsChanged(const HudState &a, const HudState &b) {
 
 bool hasSettingsChanged(const DeviceSettings &a, const DeviceSettings &b) {
     return a.brightness != b.brightness || a.theme != b.theme || a.showStreet != b.showStreet ||
-           a.offsetX != b.offsetX || a.offsetY != b.offsetY || a.revision != b.revision;
+           a.mirrorHud != b.mirrorHud || a.offsetX != b.offsetX || a.offsetY != b.offsetY ||
+           a.revision != b.revision;
+}
+
+uint16_t alertDistanceColor(int distanceM, uint16_t normalColor) {
+    return distanceM >= 0 && distanceM < 500 ? colors::Blue : normalColor;
 }
 
 bool sameRegion(const Rect &left, const Rect &right) {
@@ -250,7 +255,14 @@ void HudRenderer::render(const HudState &state, const DeviceSettings &settings) 
                                state.hasProducerState != previous_.hasProducerState ||
                                state.navigationActive != previous_.navigationActive;
     const bool configChanged = firstFrame_ || hasSettingsChanged(settings, previousSettings_);
-    if (configChanged) DisplayDriver::instance().setBrightness(settings.brightness);
+    if (configChanged) {
+        const esp_err_t brightnessResult = DisplayDriver::instance().setBrightness(settings.brightness);
+        if (brightnessResult != ESP_OK)
+            ESP_LOGE(kTag, "Brightness update failed: %s", esp_err_to_name(brightnessResult));
+        const esp_err_t mirrorResult = DisplayDriver::instance().setHudMirrored(settings.mirrorHud);
+        if (mirrorResult != ESP_OK)
+            ESP_LOGE(kTag, "HUD mirror update failed: %s", esp_err_to_name(mirrorResult));
+    }
     if (statusChanged || configChanged || !state.connected || !state.hasProducerState) {
         renderRegion(layout::Maneuver,state,settings); renderRegion(layout::Speed,state,settings);
         renderRegion(layout::Limits,state,settings); renderRegion(layout::Alerts,state,settings);
@@ -362,7 +374,8 @@ void HudRenderer::renderAlerts(Canvas &canvas, const HudState &state, const Devi
     if (primary.kind != AlertKind::None) {
         drawAlertIcon(canvas,47,34,22,primary,true);
         char distance[16]; formatDistance(primary.distanceM,distance,sizeof(distance));
-        canvas.fontText(2,60,distance,assets::kTextSmall,foreground(settings),91,true);
+        canvas.fontText(2,60,distance,assets::kTextSmall,
+                        alertDistanceColor(primary.distanceM, foreground(settings)),91,true);
     }
 
     if (activeZone) {
@@ -379,14 +392,16 @@ void HudRenderer::renderAlerts(Canvas &canvas, const HudState &state, const Devi
         if (upcoming.kind != AlertKind::None && !(upcoming == primary)) {
             drawAlertIcon(canvas,47,105,13,upcoming,false);
             char distance[12]; formatDistance(upcoming.distanceM,distance,sizeof(distance));
-            canvas.fontText(24,121,distance,assets::kTextSmall,colors::Muted,47,true);
+            canvas.fontText(24,121,distance,assets::kTextSmall,
+                            alertDistanceColor(upcoming.distanceM, colors::Muted),47,true);
         }
     } else {
         const uint8_t count = std::min<uint8_t>(2,state.upcomingAlertCount);
         for (uint8_t i=0;i<count;++i) {
             drawAlertIcon(canvas,20+i*48,105,13,state.upcomingAlerts[i],false);
             char distance[12]; formatDistance(state.upcomingAlerts[i].distanceM,distance,sizeof(distance));
-            canvas.fontText(i*48,121,distance,assets::kTextSmall,colors::Muted,47,true);
+            canvas.fontText(i*48,121,distance,assets::kTextSmall,
+                            alertDistanceColor(state.upcomingAlerts[i].distanceM, colors::Muted),47,true);
         }
     }
 }

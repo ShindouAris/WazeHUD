@@ -201,4 +201,14 @@ esp_err_t DisplayDriver::setBrightness(uint8_t percent) {
     return ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
 }
 
+esp_err_t DisplayDriver::setHudMirrored(bool mirrored) {
+    ESP_RETURN_ON_FALSE(ready_ && panel_ != nullptr, ESP_ERR_INVALID_STATE,
+                        kTag, "Display is not ready");
+    // XY is swapped for 320x170 landscape. In this transform, toggling the
+    // controller's native Y mirror reverses the logical horizontal axis while
+    // leaving top/bottom unchanged. Direct LCD viewing is backwards when this
+    // is enabled; its windshield reflection is readable.
+    return esp_lcd_panel_mirror(static_cast<esp_lcd_panel_handle_t>(panel_), false, !mirrored);
+}
+
 }  // namespace waze_hud
