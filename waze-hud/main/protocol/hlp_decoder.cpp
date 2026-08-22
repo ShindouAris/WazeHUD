@@ -48,6 +48,11 @@ Maneuver maneuverValue(int value) {
 AlertKind alertValue(int value) {
     return value >= 0 && value <= 9 ? static_cast<AlertKind>(value) : AlertKind::None;
 }
+
+bool speedDropTieComesBefore(const AlertState &left, const AlertState &right) {
+    return left.kind == AlertKind::SpeedDrop && right.kind == AlertKind::SpeedDrop &&
+           left.distanceM == right.distanceM && left.valueKmh > right.valueKmh;
+}
 }  // namespace
 
 void HlpDecoder::resetSession() {
@@ -115,26 +120,43 @@ bool HlpDecoder::decodeState(const cJSON *root, HudState &state) {
 
     const cJSON *alerts = cJSON_GetObjectItemCaseSensitive(root, "alrs");
     if (cJSON_IsArray(alerts)) {
+        std::array<AlertState, kMaxAlerts> parsedAlerts{};
+        uint8_t parsedAlertCount = 0;
         const cJSON *entry = nullptr;
         cJSON_ArrayForEach(entry, alerts) {
-            if (decoded.upcomingAlertCount >= kMaxAlerts || !cJSON_IsObject(entry)) break;
+            if (parsedAlertCount >= kMaxAlerts || !cJSON_IsObject(entry)) break;
             AlertState alert;
             alert.kind = alertValue(integerOr(entry, "k", 0));
             alert.distanceM = integerOr(entry, "d", -1);
             alert.valueKmh = std::max(0, integerOr(entry, "v", 0));
             if (alert.kind == AlertKind::None) continue;
+            bool duplicate = false;
+            for (uint8_t index = 0; index < parsedAlertCount && !duplicate; ++index)
+                duplicate = alert == parsedAlerts[index];
+            if (!duplicate) parsedAlerts[parsedAlertCount++] = alert;
+        }
 
-            // HLP/1 defines alr/alrD/alrV as a compatibility mirror of
-            // alrs[0]. The normalized upcoming list contains only entries
-            // after the dominant nearest alert, otherwise the renderer would
-            // show the same sign twice. Also reject exact duplicate producer
-            // entries while preserving same-kind alerts at other distances.
-            bool duplicate = decoded.nearestAlert.kind != AlertKind::None &&
-                             alert == decoded.nearestAlert;
-            for (uint8_t index = 0; index < decoded.upcomingAlertCount && !duplicate; ++index)
-                duplicate = alert == decoded.upcomingAlerts[index];
-            if (!duplicate)
-                decoded.upcomingAlerts[decoded.upcomingAlertCount++] = alert;
+        // The producer already orders alrs near-to-far. Preserve that order,
+        // but for speed-limit drops at the exact same position prefer the
+        // higher limit first. Insertion sorting only this tie condition is
+        // stable, bounded, and allocation-free.
+        for (uint8_t index = 1; index < parsedAlertCount; ++index) {
+            const AlertState candidate = parsedAlerts[index];
+            uint8_t position = index;
+            while (position > 0 && speedDropTieComesBefore(candidate, parsedAlerts[position - 1])) {
+                parsedAlerts[position] = parsedAlerts[position - 1];
+                --position;
+            }
+            parsedAlerts[position] = candidate;
+        }
+
+        if (parsedAlertCount > 0) {
+            // alr/alrD/alrV is only the compatibility mirror of alrs[0]. Once
+            // the full opt-in list is present, derive both the dominant and
+            // upcoming normalized state from that single canonical ordering.
+            decoded.nearestAlert = parsedAlerts[0];
+            for (uint8_t index = 1; index < parsedAlertCount; ++index)
+                decoded.upcomingAlerts[decoded.upcomingAlertCount++] = parsedAlerts[index];
         }
     }
 

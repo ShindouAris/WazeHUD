@@ -297,17 +297,18 @@ void HudRenderer::renderRegion(const Rect &region, const HudState &state, const 
 
 void HudRenderer::renderStatus(Canvas &canvas, const Rect &region, const HudState &state, const DeviceSettings &settings) {
     canvas.clear(colors::Background);
-    const int localTitleX = 160 - region.x;
-    const int localStatusX = 160 - region.x;
-    canvas.fontText(localTitleX - 80, 35 - region.y, "WAZE HUD", assets::kTextLarge,
-                    colors::Foreground, 160, true);
+    canvas.colorBitmap(16 - region.x, 25 - region.y, assets::kBootIcon);
+    constexpr int copyX = 120;
+    constexpr int copyWidth = 190;
+    canvas.fontText(copyX - region.x, 34 - region.y, "WazeHUD", assets::kTextLarge,
+                    colors::Foreground, copyWidth, true);
     const char *status = state.signalStale ? "Mất tín hiệu" : state.connected ? "Đã kết nối" : "Đang chờ thiết bị";
     const uint16_t statusColor = state.signalStale ? colors::Amber : state.connected ? colors::Green : colors::Muted;
-    canvas.fontText(localStatusX - 95, 85 - region.y, status, assets::kTextMedium,
-                    statusColor, 190, true);
+    canvas.fontText(copyX - region.x, 73 - region.y, status, assets::kTextMedium,
+                    statusColor, copyWidth, true);
     const char *detail = state.signalStale ? "Đang đợi dữ liệu" : state.connected ? "Đang chờ WazeMod" : "Đang chờ kết nối";
-    canvas.fontText(localStatusX - 105, 113 - region.y, detail, assets::kTextSmall,
-                    foreground(settings), 210, true);
+    canvas.fontText(copyX - region.x, 103 - region.y, detail, assets::kTextSmall,
+                    foreground(settings), copyWidth, true);
 }
 
 void HudRenderer::renderManeuver(Canvas &canvas, const HudState &state, const DeviceSettings &settings) {
@@ -344,6 +345,10 @@ void HudRenderer::renderLimits(Canvas &canvas, const HudState &state, const Devi
             canvas.fontText(2,48-assets::kNumberMedium.lineHeight/2,value,
                             assets::kNumberMedium,colors::Black,56,true);
         }
+    } else if (assets::kNoSpeedCurrent.pixels && assets::kNoSpeedCurrent.alpha) {
+        canvas.colorBitmap(30 - assets::kNoSpeedCurrent.width / 2,
+                           48 - assets::kNoSpeedCurrent.height / 2,
+                           assets::kNoSpeedCurrent);
     }
     if (state.hasMinimumSpeed) {
         canvas.fillCircle(42,101,17,colors::Blue);

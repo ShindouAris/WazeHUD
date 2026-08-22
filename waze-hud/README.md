@@ -85,6 +85,8 @@ The firmware uses selected source files from `D:\Code\WazeHUD\assets`:
 - Alert PNGs become RGB565 plus alpha at 44×44 and 26×26.
 - HLP camera enum `2` uses `fallbacks/penalty_camera.png` as its subtype-neutral fallback.
 - Known speed limits use `speedLimit/speed_limit_<value>.png` at 56×56, 44×44, and 26×26.
+- HLP `lim=0` renders `speedLimit/no_speed.png` at 56×56 instead of hiding the current-limit region.
+- `App/boot_icon.png` is edge-background-keyed and embedded at 96×96 for the left-aligned boot/connection screen.
 - `font_number.ttf` (TGL Engschrift) supplies dynamic speed and road-sign numerals.
 - `font_text.otf` supplies antialiased labels and the complete precomposed Vietnamese alphabet.
 
@@ -127,6 +129,7 @@ The supplied `waze-hud-link-sdk-ai-bundle.md` is normative. The implementation u
 - Unknown keys and message types are ignored
 - Missing state fields use HLP/1 defaults
 - `alrs` is explicitly requested and capped at four entries; its `alrs[0]` mirror is removed from the normalized upcoming list
+- Equal-distance `SPEED_DROP` alerts are normalized with the higher `v` first while preserving producer near-to-far order for every other case
 - Alert UI shows up to two upcoming items; an active `avg=1` no-passing zone takes the dominant slot and reduces the upcoming row to one centered item
 - `avg` is rendered as a Vietnamese no-passing zone, never as an average-speed camera
 
@@ -162,4 +165,4 @@ Useful production log tags are `APP`, `DISPLAY`, `BLE`, `HLP`, `STATE`, and `CON
 
 ## Build evidence
 
-The production configuration was compiled locally with ESP-IDF 5.5.5 and `idf.py set-target esp32s3 && idf.py build`. With embedded image and font data, the application binary is `0xecc20` bytes, leaving 69% of each 3 MB OTA slot available. Display initialization, BLE discovery, MTU negotiation, HLP handshake, dynamic configuration, live `st` street data, and sustained state/heartbeat operation were exercised on the attached T-Display-S3 and Waze producer.
+The production configuration was compiled locally with ESP-IDF 5.5.5 and `idf.py set-target esp32s3 && idf.py build`. With embedded image and font data, the application binary is `0xf5e10` bytes, leaving 68% of each 3 MB OTA slot available. Display initialization, BLE discovery, MTU negotiation, HLP handshake, dynamic configuration, live `st` street data, and sustained state/heartbeat operation were exercised on the attached T-Display-S3 and Waze producer.

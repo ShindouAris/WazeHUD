@@ -68,6 +68,8 @@ extern const ColorBitmap kAlertRoadClosedLarge;
 extern const ColorBitmap kAlertRoadClosedSmall;
 extern const ColorBitmap kAlertNoPassingLarge;
 extern const ColorBitmap kAlertNoPassingSmall;
+extern const ColorBitmap kBootIcon;
+extern const ColorBitmap kNoSpeedCurrent;
 extern const BitmapFont kTextSmall;
 extern const BitmapFont kTextMedium;
 extern const BitmapFont kTextLarge;

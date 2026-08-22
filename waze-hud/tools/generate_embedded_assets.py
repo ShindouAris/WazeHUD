@@ -8,6 +8,7 @@ Python or Pillow. Re-run this script when the source PNG/TTF files change.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from collections import deque
 from pathlib import Path
 import re
 import unicodedata
@@ -90,8 +91,36 @@ def cpp_words(data: list[int], columns: int = 12) -> str:
     return ",\n".join(rows)
 
 
-def fit_rgba(path: Path, size: int) -> Image.Image:
+def clear_connected_white_background(image: Image.Image) -> Image.Image:
+    """Make only the near-white background connected to an edge transparent."""
+    image = image.convert("RGBA")
+    width, height = image.size
+    pixels = image.load()
+    queue: deque[tuple[int, int]] = deque()
+    visited = bytearray(width * height)
+    for x in range(width):
+        queue.append((x, 0)); queue.append((x, height - 1))
+    for y in range(height):
+        queue.append((0, y)); queue.append((width - 1, y))
+    while queue:
+        x, y = queue.popleft()
+        index = y * width + x
+        if visited[index]: continue
+        visited[index] = 1
+        red, green, blue, alpha = pixels[x, y]
+        if alpha == 0 or min(red, green, blue) < 238: continue
+        pixels[x, y] = (red, green, blue, 0)
+        if x > 0: queue.append((x - 1, y))
+        if x + 1 < width: queue.append((x + 1, y))
+        if y > 0: queue.append((x, y - 1))
+        if y + 1 < height: queue.append((x, y + 1))
+    return image
+
+
+def fit_rgba(path: Path, size: int, clear_edge_background: bool = False) -> Image.Image:
     image = Image.open(path).convert("RGBA")
+    if clear_edge_background:
+        image = clear_connected_white_background(image)
     box = image.getchannel("A").getbbox()
     if box:
         image = image.crop(box)
@@ -188,8 +217,9 @@ def emit_mask(name: str, source: Path, size: int) -> tuple[str, str]:
     return declaration, body
 
 
-def emit_color_bitmap(name: str, source: Path, size: int) -> tuple[str, str]:
-    image = fit_rgba(source, size)
+def emit_color_bitmap(name: str, source: Path, size: int,
+                      clear_edge_background: bool = False) -> tuple[str, str]:
+    image = fit_rgba(source, size, clear_edge_background)
     pixels = [rgb565(pixel) for pixel in image.get_flattened_data()]
     alpha = bytes(image.getchannel("A").get_flattened_data())
     declaration = f"extern const ColorBitmap k{name};"
@@ -212,6 +242,10 @@ def main() -> None:
     for filename in ("font_number.ttf", "font_text.otf"):
         if not (SOURCE / "fonts" / filename).is_file():
             missing.append(filename)
+    if not (SOURCE / "App" / "boot_icon.png").is_file():
+        missing.append("App/boot_icon.png")
+    if not (SOURCE / "speedLimit" / "no_speed.png").is_file():
+        missing.append("speedLimit/no_speed.png")
     if missing:
         raise SystemExit("Missing source assets: " + ", ".join(missing))
 
@@ -226,6 +260,16 @@ def main() -> None:
             declaration, body = emit_color_bitmap(name + suffix, SOURCE / filename, size)
             declarations.append(declaration)
             bodies.append(body)
+
+    declaration, body = emit_color_bitmap(
+        "BootIcon", SOURCE / "App" / "boot_icon.png", 96, clear_edge_background=True)
+    declarations.append(declaration)
+    bodies.append(body)
+
+    declaration, body = emit_color_bitmap(
+        "NoSpeedCurrent", SOURCE / "speedLimit" / "no_speed.png", 56)
+    declarations.append(declaration)
+    bodies.append(body)
 
     speed_limit_rows: list[str] = []
     speed_limit_sources: list[tuple[int, Path]] = []
