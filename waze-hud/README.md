@@ -33,7 +33,7 @@ The normal build advertises `WazeHUD` and waits for the Waze Mod HUD Link picker
 
 ## Run the renderer without a phone
 
-Enable **Waze HUD firmware → Enable renderer mock mode** in `idf.py menuconfig`, then build normally. Mock mode disables BLE input and cycles eight deterministic states including lane guidance, minimum speed, alerts, a no-passing zone, overspeed, roundabout, disconnect, and a long Vietnamese street name.
+Enable **Waze HUD firmware → Enable renderer mock mode** in `idf.py menuconfig`, then build normally. Mock mode disables BLE input and cycles ten deterministic states including lane guidance, minimum speed, extended alerts, a no-passing zone, overspeed, roundabout-straight, disconnect, and a long Vietnamese street name.
 
 For a separate command-line mock build without changing the production `sdkconfig`:
 
@@ -82,8 +82,8 @@ The firmware uses selected source files from `D:\Code\WazeHUD\assets`:
 
 - Waze maneuver PNGs become 60×60 alpha masks tinted by the active HUD theme.
 - Because the source pack has no dedicated keep-left/right PNG, HLP `KEEP_LEFT/KEEP_RIGHT` use the closest Waze branch assets `exit_left/exit_right` before any procedural fallback.
-- Alert PNGs become RGB565 plus alpha at 44×44 and 26×26.
-- HLP camera enum `2` uses `fallbacks/penalty_camera.png` as its subtype-neutral fallback.
+- Alert PNGs become RGB565 plus alpha at 44×44 and 26×26; the generated lookup covers the asset-backed HLP alert codes through `74`.
+- Camera enums now remain distinct: speed `2`, phone `40`, dummy `41`, seatbelt `42`, distance `43`, bus-lane `44`, noise `45`, and stop-sign `46`.
 - Known speed limits use `speedLimit/speed_limit_<value>.png` at 56×56, 44×44, and 26×26.
 - HLP `lim=0` renders `speedLimit/no_speed.png` at 56×56 instead of hiding the current-limit region.
 - `App/boot_icon.png` is edge-background-keyed and embedded at 96×96 for the left-aligned boot/connection screen.
@@ -128,12 +128,15 @@ The supplied `waze-hud-link-sdk-ai-bundle.md` is normative. The implementation u
 - New sessions reset timestamp/state ordering
 - Unknown keys and message types are ignored
 - Missing state fields use HLP/1 defaults
+- `rm` exact meters is requested and preferred; `rkm` remains the legacy fallback
+- Maneuver `19` renders the Waze roundabout-straight asset and keeps the negotiated exit number
+- Alert codes `0..74` are normalized; recognized codes use their mapped asset and unsupported future codes use the generic hazard asset
 - `alrs` is explicitly requested and capped at four entries; its `alrs[0]` mirror is removed from the normalized upcoming list
 - Equal-distance `SPEED_DROP` alerts are normalized with the higher `v` first while preserving producer near-to-far order for every other case
 - Alert UI shows up to two upcoming items; an active `avg=1` no-passing zone takes the dominant slot and reduces the upcoming row to one centered item
 - `avg` is rendered as a Vietnamese no-passing zone, never as an average-speed camera
 
-The state decoder supports `nav`, `spd`, `lim`, `over`, `trn`, `trn2`, `dst`, `exit`, `st`, `st2`, `eta`, `rmin`, `rkm`, `avg`, `avgL`, `avgR`, `avgP`, `alr`, `alrD`, `alrV`, `alrs`, and `ts`.
+The state decoder supports `nav`, `spd`, `lim`, `over`, `trn`, `trn2`, `dst`, `exit`, `st`, `st2`, `eta`, `rmin`, `rm`, `rkm`, `avg`, `avgL`, `avgR`, `avgP`, `alr`, `alrD`, `alrV`, `alrs`, and `ts`. It implements maneuver codes `0..19` and alert codes `0..74`. Prefer exact `rm` meters for display and use `rkm` only as the legacy fallback.
 
 ## Configure the device from Waze
 
@@ -165,4 +168,4 @@ Useful production log tags are `APP`, `DISPLAY`, `BLE`, `HLP`, `STATE`, and `CON
 
 ## Build evidence
 
-The production configuration was compiled locally with ESP-IDF 5.5.5 and `idf.py set-target esp32s3 && idf.py build`. With embedded image and font data, the application binary is `0xf5e10` bytes, leaving 68% of each 3 MB OTA slot available. Display initialization, BLE discovery, MTU negotiation, HLP handshake, dynamic configuration, live `st` street data, and sustained state/heartbeat operation were exercised on the attached T-Display-S3 and Waze producer.
+The production configuration was compiled locally with ESP-IDF 5.5.5 and `idf.py set-target esp32s3 && idf.py build`. With the expanded HLP/1 asset set, the application binary is `0x155140` bytes, leaving 56% of each 3 MB OTA slot available. Display initialization, BLE discovery, MTU negotiation, HLP handshake, dynamic configuration, live `st` street data, and sustained state/heartbeat operation were exercised on the attached T-Display-S3 and Waze producer.

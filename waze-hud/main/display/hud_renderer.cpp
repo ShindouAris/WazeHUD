@@ -22,7 +22,7 @@ bool sameText(const Left &left, const Right &right) { return std::strcmp(left.da
 bool maneuverChanged(const HudState &a, const HudState &b) {
     if (a.maneuver != b.maneuver || a.secondManeuver != b.secondManeuver ||
         a.maneuverDistanceM != b.maneuverDistanceM || a.roundaboutExit != b.roundaboutExit ||
-        a.laneCount != b.laneCount) return true;
+        a.laneCount != b.laneCount || !sameText(a.eta, b.eta)) return true;
     for (uint8_t i = 0; i < a.laneCount; ++i) if (!(a.lanes[i] == b.lanes[i])) return true;
     return false;
 }
@@ -83,6 +83,7 @@ const assets::AlphaMask *maneuverAsset(Maneuver maneuver) {
         case Maneuver::Roundabout: return &assets::kManeuverRoundabout;
         case Maneuver::RoundaboutLeft: return &assets::kManeuverRoundaboutLeft;
         case Maneuver::RoundaboutRight: return &assets::kManeuverRoundaboutRight;
+        case Maneuver::RoundaboutStraight: return &assets::kManeuverRoundaboutStraight;
         case Maneuver::KeepLeft: return &assets::kManeuverExitLeft;
         case Maneuver::KeepRight: return &assets::kManeuverExitRight;
         case Maneuver::ExitLeft: return &assets::kManeuverExitLeft;
@@ -116,7 +117,8 @@ void drawManeuverIcon(Canvas &canvas, Maneuver maneuver, int exit, uint16_t colo
     if (const assets::AlphaMask *asset = maneuverAsset(maneuver)) {
         canvas.alphaMask(12, 34, *asset, color);
         if ((maneuver == Maneuver::Roundabout || maneuver == Maneuver::RoundaboutLeft ||
-             maneuver == Maneuver::RoundaboutRight) && exit > 0) {
+             maneuver == Maneuver::RoundaboutRight || maneuver == Maneuver::RoundaboutStraight) &&
+            exit > 0) {
             char number[12];
             std::snprintf(number, sizeof(number), "%d", exit);
             canvas.fontText(30, 58, number, assets::kNumberSmall, color, 24, true);
@@ -130,9 +132,19 @@ void drawManeuverIcon(Canvas &canvas, Maneuver maneuver, int exit, uint16_t colo
         canvas.fillRect(cx, top + 13, 5, 5, colors::Background);
         return;
     }
-    if (maneuver == Maneuver::Roundabout || maneuver == Maneuver::RoundaboutLeft || maneuver == Maneuver::RoundaboutRight) {
+    if (maneuver == Maneuver::Roundabout || maneuver == Maneuver::RoundaboutLeft ||
+        maneuver == Maneuver::RoundaboutRight || maneuver == Maneuver::RoundaboutStraight) {
         canvas.circle(cx, 65, 20, color, 4);
         canvas.line(cx, bottom, cx, 83, color, thick);
+        if (maneuver == Maneuver::RoundaboutStraight) {
+            canvas.line(cx, 45, cx, top, color, thick);
+            arrowHead(canvas, cx, top, 0, -1, color, 3);
+            if (exit > 0) {
+                char number[12]; std::snprintf(number, sizeof(number), "%d", exit);
+                canvas.text(cx - 9, 55, number, colors::Background, 2, 18, true);
+            }
+            return;
+        }
         const bool left = maneuver == Maneuver::RoundaboutLeft;
         const int endX = left ? cx - 27 : cx + 27;
         canvas.line(left ? cx - 19 : cx + 19, 65, endX, 65, color, thick);
@@ -169,7 +181,17 @@ void drawManeuverIcon(Canvas &canvas, Maneuver maneuver, int exit, uint16_t colo
     arrowHead(canvas, endX, endY, endX - cx, endY - 69, color, 3);
 }
 
+const assets::ColorBitmap *alertAsset(AlertKind kind, bool dominant) {
+    const uint8_t code = static_cast<uint8_t>(kind);
+    for (std::size_t index = 0; index < assets::kAlertAssetCount; ++index) {
+        const assets::AlertAssetSet &entry = assets::kAlertAssets[index];
+        if (entry.code == code) return dominant ? entry.large : entry.small;
+    }
+    return nullptr;
+}
+
 void drawAlertIcon(Canvas &canvas, int cx, int cy, int radius, const AlertState &alert, bool dominant) {
+    if (alert.kind == AlertKind::None) return;
     if (alert.kind == AlertKind::SpeedDrop) {
         const assets::ColorBitmap *sign = speedLimitAsset(
             alert.valueKmh, dominant ? SpeedSignContext::AlertLarge : SpeedSignContext::AlertSmall);
@@ -177,64 +199,31 @@ void drawAlertIcon(Canvas &canvas, int cx, int cy, int radius, const AlertState 
             canvas.colorBitmap(cx - sign->width / 2, cy - sign->height / 2, *sign);
             return;
         }
+        const int thick = dominant ? 3 : 2;
+        char value[5]{};
+        canvas.fillCircle(cx,cy,radius,colors::White);
+        canvas.circle(cx,cy,radius,colors::Red,thick);
+        std::snprintf(value,sizeof(value),"%d",alert.valueKmh);
+        if (dominant)
+            canvas.fontText(cx-radius,cy-assets::kNumberMedium.lineHeight/2,value,
+                            assets::kNumberMedium,colors::Black,2*radius,true);
+        else
+            canvas.fontText(cx-radius,cy-assets::kNumberSmall.lineHeight/2,value,
+                            assets::kNumberSmall,colors::Black,2*radius,true);
+        return;
     }
-    const assets::ColorBitmap *bitmap = nullptr;
-    switch (alert.kind) {
-        case AlertKind::Police: bitmap = dominant ? &assets::kAlertPoliceLarge : &assets::kAlertPoliceSmall; break;
-        case AlertKind::SpeedCamera: bitmap = dominant ? &assets::kAlertSpeedCameraLarge : &assets::kAlertSpeedCameraSmall; break;
-        case AlertKind::RedLightCamera: bitmap = dominant ? &assets::kAlertRedLightCameraLarge : &assets::kAlertRedLightCameraSmall; break;
-        case AlertKind::Hazard: bitmap = dominant ? &assets::kAlertHazardLarge : &assets::kAlertHazardSmall; break;
-        case AlertKind::Accident: bitmap = dominant ? &assets::kAlertAccidentLarge : &assets::kAlertAccidentSmall; break;
-        case AlertKind::TrafficJam: bitmap = dominant ? &assets::kAlertTrafficJamLarge : &assets::kAlertTrafficJamSmall; break;
-        case AlertKind::RoadClosed: bitmap = dominant ? &assets::kAlertRoadClosedLarge : &assets::kAlertRoadClosedSmall; break;
-        case AlertKind::NoPassing: bitmap = dominant ? &assets::kAlertNoPassingLarge : &assets::kAlertNoPassingSmall; break;
-        default: break;
-    }
-    if (bitmap) {
+
+    const assets::ColorBitmap *bitmap = alertAsset(alert.kind, dominant);
+    if (!bitmap) bitmap = alertAsset(AlertKind::Hazard, dominant);
+    if (bitmap && bitmap->pixels && bitmap->alpha) {
         canvas.colorBitmap(cx - bitmap->width / 2, cy - bitmap->height / 2, *bitmap);
         return;
     }
-    const int thick = dominant ? 3 : 2;
-    char value[5]{};
-    switch (alert.kind) {
-        case AlertKind::Police:
-            canvas.fillCircle(cx, cy, radius, colors::Blue); canvas.circle(cx, cy, radius, colors::White, thick);
-            canvas.text(cx-radius, cy-8, "P", colors::White, dominant ? 2 : 1, radius*2, true); break;
-        case AlertKind::SpeedCamera:
-            canvas.fillCircle(cx, cy, radius, colors::Amber); canvas.fillRect(cx-radius/2,cy-radius/3,radius,radius*2/3,colors::Black);
-            canvas.fillCircle(cx,cy,radius/4,colors::White); break;
-        case AlertKind::RedLightCamera:
-            canvas.fillRect(cx-radius/2,cy-radius,radius,radius*2,colors::Muted);
-            canvas.fillCircle(cx,cy-radius/2,radius/4,colors::Red); canvas.fillCircle(cx,cy,radius/4,colors::Amber);
-            canvas.fillCircle(cx,cy+radius/2,radius/4,colors::Green); break;
-        case AlertKind::Hazard:
-            canvas.triangle(cx,cy-radius,cx-radius,cy+radius,cx+radius,cy+radius,colors::Amber);
-            canvas.text(cx-radius,cy-7,"!",colors::Amber,dominant?2:1,radius*2,true); break;
-        case AlertKind::Accident:
-            canvas.circle(cx,cy,radius,colors::Red,thick); canvas.line(cx-radius/2,cy-radius/2,cx+radius/2,cy+radius/2,colors::Red,thick);
-            canvas.line(cx+radius/2,cy-radius/2,cx-radius/2,cy+radius/2,colors::Red,thick); break;
-        case AlertKind::TrafficJam:
-            for (int row=-1; row<=1; ++row) {
-                canvas.line(cx-radius,cy+row*6,cx+radius,cy+row*6,colors::Amber,thick);
-            }
-            break;
-        case AlertKind::RoadClosed:
-            canvas.fillCircle(cx,cy,radius,colors::Red); canvas.fillRect(cx-radius+3,cy-3,2*radius-6,6,colors::White); break;
-        case AlertKind::SpeedDrop:
-            canvas.fillCircle(cx,cy,radius,colors::White); canvas.circle(cx,cy,radius,colors::Red,thick);
-            std::snprintf(value,sizeof(value),"%d",alert.valueKmh);
-            if (dominant)
-                canvas.fontText(cx-radius,cy-assets::kNumberMedium.lineHeight/2,value,
-                                assets::kNumberMedium,colors::Black,2*radius,true);
-            else
-                canvas.fontText(cx-radius,cy-assets::kNumberSmall.lineHeight/2,value,
-                                assets::kNumberSmall,colors::Black,2*radius,true);
-            break;
-        case AlertKind::NoPassing:
-            canvas.fillCircle(cx,cy,radius,colors::White); canvas.circle(cx,cy,radius,colors::Red,thick);
-            canvas.fillRect(cx-radius/2,cy-5,5,12,colors::Black); canvas.fillRect(cx+3,cy-5,5,12,colors::Red); break;
-        case AlertKind::None: break;
-    }
+
+    // Last-resort primitive only when the generated hazard asset is absent.
+    canvas.triangle(cx,cy-radius,cx-radius,cy+radius,cx+radius,cy+radius,colors::Amber);
+    canvas.fontText(cx-radius,cy-assets::kTextMedium.lineHeight/2,"!",assets::kTextMedium,
+                    colors::Amber,2*radius,true);
 }
 
 void formatDistance(int meters, char *output, size_t capacity) {
@@ -321,8 +310,11 @@ void HudRenderer::renderManeuver(Canvas &canvas, const HudState &state, const De
     drawManeuverIcon(canvas,state.maneuver,state.roundaboutExit,fg);
     char distance[16]; formatDistance(state.maneuverDistanceM,distance,sizeof(distance));
     canvas.fontText(2,108,distance,assets::kTextSmall,fg,81,true);
-    if (state.secondManeuver != Maneuver::None)
-        canvas.fontText(2,124,"--",assets::kTextSmall,colors::Muted,81,true);
+    if (state.eta[0] != 0) {
+        char eta[16];
+        std::snprintf(eta, sizeof(eta), "ETA %s", state.eta.data());
+        canvas.fontText(2,124,eta,assets::kTextSmall,colors::Muted,81,true);
+    }
 }
 
 void HudRenderer::renderSpeed(Canvas &canvas, const HudState &state, const DeviceSettings &settings) {

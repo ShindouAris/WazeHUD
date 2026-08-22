@@ -29,20 +29,95 @@ MANEUVERS = {
     "ManeuverRoundabout": "car_big_trans_directions_roundabout.png",
     "ManeuverRoundaboutLeft": "car_big_trans_directions_roundabout_l.png",
     "ManeuverRoundaboutRight": "car_big_trans_directions_roundabout_r.png",
+    "ManeuverRoundaboutStraight": "car_big_trans_directions_roundabout_s.png",
     "ManeuverExitLeft": "car_big_trans_direction_exit_left.png",
     "ManeuverExitRight": "car_big_trans_direction_exit_right.png",
     "ManeuverArrive": "car_big_trans_direction_end.png",
 }
 
-ALERTS = {
+ALERT_ASSETS = {
     "AlertPolice": "alerts/bigpin_police.png",
-    "AlertSpeedCamera": "fallbacks/penalty_camera.png",
+    "AlertSpeedCamera": "alerts/bigpin_speed_camera.png",
     "AlertRedLightCamera": "alerts/bigpin_red_light_camera.png",
     "AlertHazard": "alerts/bigpin_hazard.png",
     "AlertAccident": "alerts/bigpin_accident.png",
     "AlertTrafficJam": "alerts/bigpin_traffic_3.png",
     "AlertRoadClosed": "alerts/bigpin_closure.png",
     "AlertNoPassing": "alerts/no_passing_in.png",
+    "AlertEndNoPassing": "alerts/no_passing_out.png",
+    "AlertRailway": "alerts/bigpin_railroad.png",
+    "AlertTollBooth": "alerts/bigpin_permanent_hazard_toll_booth.png",
+    "AlertStoppedVehicle": "alerts/bigpin_hazard_stopped.png",
+    "AlertConstruction": "alerts/bigpin_hazard_construction.png",
+    "AlertPothole": "alerts/bigpin_hazard_pothole.png",
+    "AlertWeather": "alerts/bigpin_bad_weather.png",
+    "AlertBlockedLane": "alerts/bigpin_blocked_lane.png",
+    "AlertDangerousRoad": "alerts/bigpin_hazardonroad.png",
+    "AlertExpresswayExit": "alerts/loi_ra.png",
+    "AlertRestStop": "alerts/bigpin_parking.png",
+    "AlertEndProhibitions": "alerts/end_of_previous_prohibitions.png",
+    "AlertResidentialStart": "alerts/residential_area_start.png",
+    "AlertResidentialEnd": "alerts/residential_area_end.png",
+    "AlertNoCar": "alerts/cam_oto.png",
+    "AlertNoMotorcycle": "alerts/cam_xe_may.png",
+    "AlertNoLeftTurn": "alerts/no_left_turn.png",
+    "AlertNoRightTurn": "alerts/no_right_turn.png",
+    "AlertNoUTurn": "alerts/no_u_turn.png",
+    "AlertMandatoryStraight": "alerts/only_go_straight.png",
+    "AlertMandatoryRight": "alerts/only_turn_right.png",
+    "AlertMandatoryLeft": "alerts/only_turn_left.png",
+    "AlertPhoneCamera": "alerts/bigpin_phone_camera.png",
+    "AlertDummyCamera": "alerts/bigpin_dummy_camera.png",
+    "AlertSeatbeltCamera": "alerts/bigpin_seatbelt_camera.png",
+    "AlertDistanceCamera": "alerts/bigpin_distance_between_vehicles_camera.png",
+    "AlertBusLaneCamera": "alerts/bigpin_bus_lane_cam.png",
+    "AlertNoiseCamera": "alerts/bigpin_noise_camera.png",
+    "AlertStopSignCamera": "alerts/bigpin_stop_sign_camera.png",
+    "AlertAnimal": "alerts/bigpin_animal.png",
+    "AlertObjectOnRoad": "alerts/bigpin_hazard_object_on_road.png",
+    "AlertRoadkill": "alerts/bigpin_hazard_roadkill.png",
+    "AlertFlood": "alerts/bigpin_hazard_weather_flood.png",
+    "AlertFog": "alerts/bigpin_hazard_weather_fog.png",
+    "AlertHail": "alerts/bigpin_hazard_weather_hail.png",
+    "AlertSnow": "alerts/bigpin_hazard_weather_snow.png",
+    "AlertIce": "alerts/bigpin_hazard_weather_ice.png",
+    "AlertSlipperyRoad": "alerts/bigpin_slippery_road.png",
+    "AlertSpeedBump": "alerts/bigpin_permanent_hazard_speed_bumps.png",
+    "AlertSchoolZone": "alerts/bigpin_permanent_hazard_school_zone.png",
+    "AlertLanesMerging": "alerts/bigpin_permanent_hazard_lanes_merging.png",
+    "AlertDangerousCurve": "alerts/bigpin_permanent_hazard_dangerous_curves.png",
+    "AlertFork": "alerts/bigpin_permanent_hazard_fork.png",
+    "AlertBrokenLight": "alerts/bigpin_hazard_broken_light.png",
+    "AlertCyclist": "alerts/bigpin_cyclist.png",
+    "AlertEmergencyVehicle": "alerts/bigpin_emergency_vehicle.png",
+    "AlertPersonalSafety": "alerts/bigpin_personal_safety_a.png",
+    "AlertNoLeftAndUTurn": "alerts/no_left_and_u_turn.png",
+    "AlertNoRightAndUTurn": "alerts/no_right_and_u_turn.png",
+}
+
+ALERT_CODE_ASSET = {
+    1: "AlertPolice", 2: "AlertSpeedCamera", 3: "AlertRedLightCamera",
+    4: "AlertHazard", 5: "AlertAccident", 6: "AlertTrafficJam",
+    7: "AlertRoadClosed", 9: "AlertNoPassing", 10: "AlertEndNoPassing",
+    11: "AlertRailway", 12: "AlertTollBooth", 13: "AlertStoppedVehicle",
+    14: "AlertConstruction", 15: "AlertPothole", 16: "AlertWeather",
+    17: "AlertBlockedLane", 18: "AlertDangerousRoad", 19: "AlertExpresswayExit",
+    20: "AlertRestStop", 21: "AlertRestStop", 22: "AlertEndProhibitions",
+    23: "AlertResidentialStart", 24: "AlertResidentialEnd", 25: "AlertEndProhibitions",
+    26: "AlertNoCar", 27: "AlertNoMotorcycle", 28: "AlertNoLeftTurn",
+    29: "AlertNoRightTurn", 30: "AlertNoUTurn", 32: "AlertMandatoryStraight",
+    33: "AlertMandatoryRight", 34: "AlertMandatoryLeft", 40: "AlertPhoneCamera",
+    41: "AlertDummyCamera", 42: "AlertSeatbeltCamera", 43: "AlertDistanceCamera",
+    44: "AlertBusLaneCamera", 45: "AlertNoiseCamera", 46: "AlertStopSignCamera",
+    47: "AlertAnimal", 48: "AlertObjectOnRoad", 49: "AlertRoadkill",
+    50: "AlertFlood", 51: "AlertFog", 52: "AlertHail", 53: "AlertSnow",
+    54: "AlertIce", 55: "AlertSlipperyRoad", 56: "AlertSpeedBump",
+    57: "AlertSchoolZone", 58: "AlertLanesMerging", 59: "AlertDangerousCurve",
+    60: "AlertFork", 61: "AlertBrokenLight", 62: "AlertCyclist",
+    63: "AlertEmergencyVehicle", 64: "AlertPersonalSafety",
+    66: "AlertNoLeftAndUTurn", 69: "AlertNoLeftAndUTurn",
+    70: "AlertNoRightAndUTurn", 71: "AlertNoRightAndUTurn",
+    72: "AlertNoLeftTurn", 73: "AlertNoRightTurn", 74: "AlertNoUTurn",
 }
 
 VIETNAMESE = (
@@ -236,7 +311,7 @@ def main() -> None:
     for filename in MANEUVERS.values():
         if not (SOURCE / "Waze" / filename).is_file():
             missing.append(filename)
-    for filename in ALERTS.values():
+    for filename in ALERT_ASSETS.values():
         if not (SOURCE / filename).is_file():
             missing.append(filename)
     for filename in ("font_number.ttf", "font_text.otf"):
@@ -255,11 +330,22 @@ def main() -> None:
         declaration, body = emit_mask(name, SOURCE / "Waze" / filename, 60)
         declarations.append(declaration)
         bodies.append(body)
-    for name, filename in ALERTS.items():
+    for name, filename in ALERT_ASSETS.items():
         for suffix, size in (("Large", 44), ("Small", 26)):
             declaration, body = emit_color_bitmap(name + suffix, SOURCE / filename, size)
             declarations.append(declaration)
             bodies.append(body)
+
+    alert_rows = []
+    for code, name in sorted(ALERT_CODE_ASSET.items()):
+        alert_rows.append(f"    {{{code},&k{name}Large,&k{name}Small}}")
+    bodies.append(
+        "const AlertAssetSet kAlertAssets[] = {\n"
+        + ",\n".join(alert_rows)
+        + "\n};\n"
+        + "const std::size_t kAlertAssetCount = "
+        + "sizeof(kAlertAssets) / sizeof(kAlertAssets[0]);\n"
+    )
 
     declaration, body = emit_color_bitmap(
         "BootIcon", SOURCE / "App" / "boot_icon.png", 96, clear_edge_background=True)
@@ -336,6 +422,12 @@ struct SpeedLimitAssetSet {
     const ColorBitmap *alertSmall;
 };
 
+struct AlertAssetSet {
+    uint8_t code;
+    const ColorBitmap *large;
+    const ColorBitmap *small;
+};
+
 struct FontGlyph {
     uint32_t codepoint;
     uint32_t bitmapOffset;
@@ -353,7 +445,7 @@ struct BitmapFont {
     uint8_t lineHeight;
 };
 
-""" + "\n".join(declarations) + "\n\nextern const SpeedLimitAssetSet kSpeedLimitAssets[];\nextern const std::size_t kSpeedLimitAssetCount;\n\n}  // namespace waze_hud::assets\n"
+""" + "\n".join(declarations) + "\n\nextern const SpeedLimitAssetSet kSpeedLimitAssets[];\nextern const std::size_t kSpeedLimitAssetCount;\nextern const AlertAssetSet kAlertAssets[];\nextern const std::size_t kAlertAssetCount;\n\n}  // namespace waze_hud::assets\n"
     source = """// Generated by tools/generate_embedded_assets.py. Do not edit manually.
 #include "assets/generated_assets.h"
 

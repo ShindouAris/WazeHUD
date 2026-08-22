@@ -111,10 +111,11 @@ HudState baseMock() {
 void mockTask(void *) {
     ESP_LOGW(kTag, "Renderer mock mode enabled; BLE/HLP input is disabled");
     vTaskDelay(pdMS_TO_TICKS(1200));
+    constexpr uint32_t kScenarioCount = 10;
     uint32_t scenario = 0;
     for (;;) {
         HudState state = baseMock();
-        switch (scenario % 8U) {
+        switch (scenario % kScenarioCount) {
             case 0: break;
             case 1:
                 state.nearestAlert = {AlertKind::SpeedCamera, 300, 0};
@@ -140,9 +141,21 @@ void mockTask(void *) {
             case 7:
                 setText(state.currentStreet, "Đường Cách Mạng Tháng Tám, Phường Bến Thành");
                 state.maneuver = Maneuver::ExitRight; state.maneuverDistanceM = 980; break;
+            case 8:
+                state.maneuver = Maneuver::RoundaboutStraight; state.roundaboutExit = 2;
+                state.maneuverDistanceM = 420;
+                state.nearestAlert = {AlertKind::PhoneCamera, 650, 0};
+                break;
+            case 9:
+                state.nearestAlert = {AlertKind::Railway, 180, 0};
+                state.upcomingAlerts[0] = {AlertKind::Flood, 900, 0};
+                state.upcomingAlerts[1] = {AlertKind::SchoolZone, 1400, 0};
+                state.upcomingAlertCount = 2;
+                break;
         }
         HudStateStore::instance().publish(state);
-        ESP_LOGI(kTag, "Mock renderer scenario %lu", static_cast<unsigned long>(scenario % 8U));
+        ESP_LOGI(kTag, "Mock renderer scenario %lu",
+                 static_cast<unsigned long>(scenario % kScenarioCount));
         ++scenario;
         vTaskDelay(pdMS_TO_TICKS(5000));
     }

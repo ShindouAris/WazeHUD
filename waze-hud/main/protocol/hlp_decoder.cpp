@@ -42,11 +42,13 @@ void copyUtf8(const cJSON *root, const char *key, std::array<char, Capacity> &de
 }
 
 Maneuver maneuverValue(int value) {
-    return value >= 0 && value <= 18 ? static_cast<Maneuver>(value) : Maneuver::None;
+    return value >= 0 && value <= 19 ? static_cast<Maneuver>(value) : Maneuver::None;
 }
 
 AlertKind alertValue(int value) {
-    return value >= 0 && value <= 9 ? static_cast<AlertKind>(value) : AlertKind::None;
+    if (value == 0) return AlertKind::None;
+    if (value > 0 && value <= 74) return static_cast<AlertKind>(value);
+    return value > 0 ? AlertKind::Hazard : AlertKind::None;
 }
 
 bool speedDropTieComesBefore(const AlertState &left, const AlertState &right) {
@@ -109,7 +111,12 @@ bool HlpDecoder::decodeState(const cJSON *root, HudState &state) {
     copyUtf8(root, "st2", decoded.nextStreet);
     copyUtf8(root, "eta", decoded.eta);
     decoded.remainingMinutes = std::max(0, integerOr(root, "rmin", 0));
-    decoded.remainingKm = std::max(0.0F, numberOr(root, "rkm", 0.0F));
+    const int exactRemainingMeters = integerOr(root, "rm", -1);
+    const float legacyRemainingKm = std::max(0.0F, numberOr(root, "rkm", 0.0F));
+    decoded.remainingMeters = exactRemainingMeters >= 0
+        ? exactRemainingMeters : static_cast<int>(std::lround(legacyRemainingKm * 1000.0F));
+    decoded.remainingKm = exactRemainingMeters >= 0
+        ? static_cast<float>(exactRemainingMeters) / 1000.0F : legacyRemainingKm;
     decoded.noPassingZone = integerOr(root, "avg", 0) != 0;
     decoded.noPassingRemainingM = std::max(0, integerOr(root, "avgL", 0));
     decoded.noPassingRecommendedKmh = std::max(0, integerOr(root, "avgR", 0));
