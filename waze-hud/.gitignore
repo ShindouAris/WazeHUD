@@ -1,0 +1,7 @@
+/build/
+/build-mock/
+/sdkconfig
+/sdkconfig.old
+/sdkconfig.mock
+/sdkconfig.mock.old
+backups/

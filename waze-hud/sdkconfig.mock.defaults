@@ -1,0 +1,2 @@
+# Append to sdkconfig.defaults for a renderer-only build.
+CONFIG_WAZE_HUD_MOCK_MODE=y
