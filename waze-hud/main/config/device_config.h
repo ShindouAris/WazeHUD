@@ -14,9 +14,10 @@ struct DeviceSettings {
     UiTheme theme{UiTheme::Auto};
     bool showStreet{true};
     bool mirrorHud{false};
+    bool rotateDisplay{false};
     int8_t offsetX{0};
     int8_t offsetY{0};
-    uint32_t revision{2};
+    uint32_t revision{3};
 };
 
 using HlpSendLine = void (*)(const char *line, void *context);
@@ -27,6 +28,7 @@ public:
 
     esp_err_t init();
     DeviceSettings snapshot() const;
+    esp_err_t toggleRotation();
     bool handleMessage(const cJSON *root, HlpSendLine send, void *context);
     void publishSchema(HlpSendLine send, void *context);
 

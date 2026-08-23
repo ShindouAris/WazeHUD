@@ -13,7 +13,7 @@ public:
     esp_err_t init();
     esp_err_t drawRegion(const Rect &region, const uint16_t *pixels);
     esp_err_t setBrightness(uint8_t percent);
-    esp_err_t setHudMirrored(bool mirrored);
+    esp_err_t setOrientation(bool mirrored, bool rotated180);
     bool ready() const { return ready_; }
 
 private:

@@ -13,8 +13,8 @@ namespace waze_hud {
 namespace {
 constexpr char kTag[] = "CONFIG";
 constexpr char kNamespace[] = "hud_cfg";
-constexpr int kItemCount = 6;
-constexpr uint32_t kSchemaRevision = 2;
+constexpr int kItemCount = 7;
+constexpr uint32_t kSchemaRevision = 3;
 
 bool validBrightness(int value) {
     return value >= 10 && value <= 100 && ((value - 10) % 5) == 0;
@@ -74,9 +74,11 @@ esp_err_t saveSettings(const DeviceSettings &settings) {
     if (result == ESP_OK) result = nvs_set_u8(nvs, "theme", static_cast<uint8_t>(settings.theme));
     if (result == ESP_OK) result = nvs_set_u8(nvs, "street", settings.showStreet ? 1 : 0);
     if (result == ESP_OK) result = nvs_set_u8(nvs, "mirror", settings.mirrorHud ? 1 : 0);
+    if (result == ESP_OK) result = nvs_set_u8(nvs, "rotate", settings.rotateDisplay ? 1 : 0);
     if (result == ESP_OK) result = nvs_set_i8(nvs, "offset_x", settings.offsetX);
     if (result == ESP_OK) result = nvs_set_i8(nvs, "offset_y", settings.offsetY);
     if (result == ESP_OK) result = nvs_set_u32(nvs, "revision", settings.revision);
+    if (result == ESP_OK) result = nvs_set_u32(nvs, "schema_ver", kSchemaRevision);
     if (result == ESP_OK) result = nvs_commit(nvs);
     nvs_close(nvs);
     return result;
@@ -126,12 +128,25 @@ esp_err_t DeviceConfig::init() {
         active_.theme = static_cast<UiTheme>(byte);
     if (nvs_get_u8(nvs, "street", &byte) == ESP_OK) active_.showStreet = byte != 0;
     if (nvs_get_u8(nvs, "mirror", &byte) == ESP_OK) active_.mirrorHud = byte != 0;
+    if (nvs_get_u8(nvs, "rotate", &byte) == ESP_OK) active_.rotateDisplay = byte != 0;
     int8_t offset = 0;
     if (nvs_get_i8(nvs, "offset_x", &offset) == ESP_OK && offset >= -5 && offset <= 5) active_.offsetX = offset;
     if (nvs_get_i8(nvs, "offset_y", &offset) == ESP_OK && offset >= -5 && offset <= 5) active_.offsetY = offset;
     (void)nvs_get_u32(nvs, "revision", &active_.revision);
-    if (active_.revision < kSchemaRevision) active_.revision = kSchemaRevision;
+    uint32_t storedSchemaRevision = 0;
+    (void)nvs_get_u32(nvs, "schema_ver", &storedSchemaRevision);
+    const bool migrateSchema = storedSchemaRevision < kSchemaRevision;
+    if (migrateSchema) {
+        if (active_.revision < kSchemaRevision) active_.revision = kSchemaRevision;
+        else if (active_.revision != UINT32_MAX) ++active_.revision;
+    }
     nvs_close(nvs);
+    if (migrateSchema) {
+        ESP_RETURN_ON_ERROR(saveSettings(active_), kTag, "NVS schema migration failed");
+        ESP_LOGI(kTag, "Migrated configuration schema to %lu, revision %lu",
+                 static_cast<unsigned long>(kSchemaRevision),
+                 static_cast<unsigned long>(active_.revision));
+    }
     ESP_LOGI(kTag, "Loaded revision %lu, brightness %u%%",
              static_cast<unsigned long>(active_.revision), active_.brightness);
     return ESP_OK;
@@ -143,6 +158,25 @@ DeviceSettings DeviceConfig::snapshot() const {
     copy = active_;
     taskEXIT_CRITICAL(&lock_);
     return copy;
+}
+
+esp_err_t DeviceConfig::toggleRotation() {
+    DeviceSettings candidate = snapshot();
+    candidate.rotateDisplay = !candidate.rotateDisplay;
+    ++candidate.revision;
+    const esp_err_t saved = saveSettings(candidate);
+    if (saved != ESP_OK) {
+        ESP_LOGE(kTag, "Button rotation save failed: %s", esp_err_to_name(saved));
+        return saved;
+    }
+    taskENTER_CRITICAL(&lock_);
+    active_ = candidate;
+    taskEXIT_CRITICAL(&lock_);
+    ESP_LOGI(kTag, "Display rotation changed to %s, revision %lu",
+             candidate.rotateDisplay ? "USB-right" : "USB-left",
+             static_cast<unsigned long>(candidate.revision));
+    HudStateStore::instance().refresh();
+    return ESP_OK;
 }
 
 void DeviceConfig::publishSchema(HlpSendLine send, void *context) {
@@ -177,6 +211,9 @@ void DeviceConfig::publishSchema(HlpSendLine send, void *context) {
 
     root = schemaItem(settings.revision, "mirror_hud", "toggle", "Phan chieu HUD");
     cJSON_AddBoolToObject(root, "value", settings.mirrorHud); sendJson(root, send, context);
+
+    root = schemaItem(settings.revision, "rotate_display", "toggle", "Xoay 180 do (USB ben phai)");
+    cJSON_AddBoolToObject(root, "value", settings.rotateDisplay); sendJson(root, send, context);
 
     root = schemaItem(settings.revision, "offset_x", "integer", "Dich ngang");
     cJSON_AddNumberToObject(root, "value", settings.offsetX);
@@ -236,6 +273,8 @@ bool DeviceConfig::handleMessage(const cJSON *root, HlpSendLine send, void *cont
             bit = 1U << 2; valid = cJSON_IsBool(value); if (valid) pending.draft.showStreet = cJSON_IsTrue(value);
         } else if (std::strcmp(id->valuestring, "mirror_hud") == 0) {
             bit = 1U << 5; valid = cJSON_IsBool(value); if (valid) pending.draft.mirrorHud = cJSON_IsTrue(value);
+        } else if (std::strcmp(id->valuestring, "rotate_display") == 0) {
+            bit = 1U << 6; valid = cJSON_IsBool(value); if (valid) pending.draft.rotateDisplay = cJSON_IsTrue(value);
         } else if (std::strcmp(id->valuestring, "offset_x") == 0) {
             bit = 1U << 3; valid = exactInteger(value, -5, 5, integer); if (valid) pending.draft.offsetX = integer;
         } else if (std::strcmp(id->valuestring, "offset_y") == 0) {

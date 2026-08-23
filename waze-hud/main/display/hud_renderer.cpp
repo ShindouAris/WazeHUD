@@ -37,8 +37,8 @@ bool alertsChanged(const HudState &a, const HudState &b) {
 
 bool hasSettingsChanged(const DeviceSettings &a, const DeviceSettings &b) {
     return a.brightness != b.brightness || a.theme != b.theme || a.showStreet != b.showStreet ||
-           a.mirrorHud != b.mirrorHud || a.offsetX != b.offsetX || a.offsetY != b.offsetY ||
-           a.revision != b.revision;
+           a.mirrorHud != b.mirrorHud || a.rotateDisplay != b.rotateDisplay ||
+           a.offsetX != b.offsetX || a.offsetY != b.offsetY || a.revision != b.revision;
 }
 
 uint16_t alertDistanceColor(int distanceM, uint16_t normalColor) {
@@ -259,9 +259,10 @@ void HudRenderer::render(const HudState &state, const DeviceSettings &settings) 
         const esp_err_t brightnessResult = DisplayDriver::instance().setBrightness(settings.brightness);
         if (brightnessResult != ESP_OK)
             ESP_LOGE(kTag, "Brightness update failed: %s", esp_err_to_name(brightnessResult));
-        const esp_err_t mirrorResult = DisplayDriver::instance().setHudMirrored(settings.mirrorHud);
-        if (mirrorResult != ESP_OK)
-            ESP_LOGE(kTag, "HUD mirror update failed: %s", esp_err_to_name(mirrorResult));
+        const esp_err_t orientationResult = DisplayDriver::instance().setOrientation(
+            settings.mirrorHud, settings.rotateDisplay);
+        if (orientationResult != ESP_OK)
+            ESP_LOGE(kTag, "HUD orientation update failed: %s", esp_err_to_name(orientationResult));
     }
     if (statusChanged || configChanged || !state.connected || !state.hasProducerState) {
         renderRegion(layout::Maneuver,state,settings); renderRegion(layout::Speed,state,settings);
@@ -410,7 +411,7 @@ void HudRenderer::renderStreet(Canvas &canvas, const HudState &state, const Devi
     canvas.clear(colors::Panel);
     if (!settings.showStreet) return;
     const char *street = state.currentStreet.data();
-    if (!*street) street = state.navigationActive ? "ROUTE ACTIVE" : "READY";
+    if (!*street) street = state.navigationActive ? "Đang điều hướng" : "Đã sẵn sàng";
     canvas.fontText(5, 0, street, assets::kTextMedium,
                     foreground(settings), 310, true);
 }

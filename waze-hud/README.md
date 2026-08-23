@@ -149,10 +149,13 @@ When the producer advertises `device_config`, the HUD publishes five controls:
 | `theme` | Selection | `auto`, `day`, or `night` |
 | `show_street` | Toggle | Boolean |
 | `mirror_hud` | Toggle | Horizontal windshield-reflection mirror, persisted in NVS |
+| `rotate_display` | Toggle | 180° mounting rotation for USB connector on the right |
 | `offset_x` | Integer | −5 through 5 |
 | `offset_y` | Integer | −5 through 5 |
 
-The six-item schema is revision 2. Firmware with stored revision 1 migrates to revision 2 with mirroring disabled while preserving the other settings. The firmware stages every value, rejects missing/duplicate/unknown IDs, persists the complete candidate to NVS, increments the schema revision, and only then sends a successful `cfg_ack`. A repeated commit receives the previous transaction result instead of applying twice.
+The seven-item schema has schema version 3. Older stored schemas migrate once, preserving existing values while defaulting new orientation settings off. The firmware stages every value, rejects missing/duplicate/unknown IDs, persists the complete candidate to NVS, increments the value revision, and only then sends a successful `cfg_ack`. A repeated commit receives the previous transaction result instead of applying twice.
+
+GPIO14 is the active-low programmable orientation button. A debounced press toggles `rotate_display`, persists it to NVS, and refreshes the UI without rebooting. GPIO0 remains reserved as the BOOT strap. `mirror_hud` and `rotate_display` compose independently.
 
 ## Diagnose hardware
 
@@ -170,4 +173,4 @@ Useful production log tags are `APP`, `DISPLAY`, `BLE`, `HLP`, `STATE`, and `CON
 
 ## Build evidence
 
-The production configuration was compiled locally with ESP-IDF 5.5.5 and `idf.py set-target esp32s3 && idf.py build`. With the expanded HLP/1 asset set, the application binary is `0x1552f0` bytes, leaving 56% of each 3 MB OTA slot available. The mock build is `0x10b310`. Display initialization, BLE discovery, MTU negotiation, HLP handshake, dynamic configuration, live `st` street data, and sustained state/heartbeat operation were exercised on the attached T-Display-S3 and Waze producer.
+The production configuration was compiled locally with ESP-IDF 5.5.5 and `idf.py set-target esp32s3 && idf.py build`. With the expanded HLP/1 asset set, the application binary is `0x1557c0` bytes, leaving 56% of each 3 MB OTA slot available. The mock build is `0x10b960`. Display initialization, BLE discovery, MTU negotiation, HLP handshake, dynamic configuration, live `st` street data, and sustained state/heartbeat operation were exercised on the attached T-Display-S3 and Waze producer.

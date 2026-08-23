@@ -2,6 +2,7 @@
 #include "config/device_config.h"
 #include "display/display_driver.h"
 #include "display/hud_renderer.h"
+#include "driver/gpio.h"
 #include "esp_check.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
@@ -20,6 +21,7 @@ namespace waze_hud {
 namespace {
 constexpr char kTag[] = "APP";
 uint32_t bootSequence = 0;
+constexpr gpio_num_t kOrientationButton = GPIO_NUM_14;
 
 void recordBootReason() {
     nvs_handle_t nvs;
@@ -57,6 +59,35 @@ void stableBootTask(void *) {
         ESP_LOGI(kTag, "Boot %lu remained stable for 10 seconds", static_cast<unsigned long>(bootSequence));
     }
     vTaskDelete(nullptr);
+}
+
+void orientationButtonTask(void *) {
+    for (;;) {
+        if (gpio_get_level(kOrientationButton) == 0) {
+            vTaskDelay(pdMS_TO_TICKS(40));
+            if (gpio_get_level(kOrientationButton) == 0) {
+                const esp_err_t result = DeviceConfig::instance().toggleRotation();
+                if (result != ESP_OK)
+                    ESP_LOGE(kTag, "Orientation button update failed: %s", esp_err_to_name(result));
+                while (gpio_get_level(kOrientationButton) == 0)
+                    vTaskDelay(pdMS_TO_TICKS(20));
+            }
+        }
+        vTaskDelay(pdMS_TO_TICKS(20));
+    }
+}
+
+esp_err_t startOrientationButton() {
+    gpio_config_t config{};
+    config.pin_bit_mask = 1ULL << static_cast<unsigned>(kOrientationButton);
+    config.mode = GPIO_MODE_INPUT;
+    config.pull_up_en = GPIO_PULLUP_ENABLE;
+    config.pull_down_en = GPIO_PULLDOWN_DISABLE;
+    config.intr_type = GPIO_INTR_DISABLE;
+    ESP_RETURN_ON_ERROR(gpio_config(&config), kTag, "GPIO14 orientation button setup failed");
+    const BaseType_t created = xTaskCreate(orientationButtonTask, "hud_button", 2560,
+                                           nullptr, 3, nullptr);
+    return created == pdPASS ? ESP_OK : ESP_ERR_NO_MEM;
 }
 
 void uiTask(void *) {
@@ -185,6 +216,8 @@ extern "C" void app_main() {
 #else
     ESP_LOGW("APP", "Headless diagnostic mode: LCD and UI task disabled");
 #endif
+
+    ESP_ERROR_CHECK(startOrientationButton());
 
 #if CONFIG_WAZE_HUD_MOCK_MODE
     ESP_ERROR_CHECK(xTaskCreate(mockTask, "hud_mock", 4096, nullptr, 4, nullptr) == pdPASS ? ESP_OK : ESP_ERR_NO_MEM);
