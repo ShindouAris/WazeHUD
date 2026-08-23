@@ -108,7 +108,10 @@ void uiTask(void *) {
     renderer.render(state, DeviceConfig::instance().snapshot());
     ESP_LOGI(kTag, "Initial UI frame rendered");
     for (;;) {
-        if (HudStateStore::instance().receive(state, portMAX_DELAY))
+        const TickType_t timeout = renderer.animationActive() ? pdMS_TO_TICKS(80) : portMAX_DELAY;
+        if (HudStateStore::instance().receive(state, timeout))
+            renderer.render(state, DeviceConfig::instance().snapshot());
+        else if (renderer.animationActive())
             renderer.render(state, DeviceConfig::instance().snapshot());
     }
 }
@@ -131,11 +134,14 @@ HudState baseMock() {
     state.hasMinimumSpeed = true;
     state.minimumSpeedKmh = 60;
     state.laneCount = 3;
-    state.lanes[0] = {LaneDirection::Straight, true};
-    state.lanes[1] = {LaneDirection::Straight, true};
-    state.lanes[2] = {LaneDirection::Right, false};
+    state.lanes[0] = {0x05, 0x04};  // straight + left, selected left
+    state.lanes[1] = {0x01, 0x01};  // straight, selected
+    state.lanes[2] = {0x30, 0x10};  // slight/right, selected slight-right
     setText(state.currentStreet, "Đường Phạm Văn Đồng");
     setText(state.eta, "20:01");
+    state.clockUnixSeconds = 1787478627;
+    state.timezoneOffsetMinutes = 420;
+    state.clockSyncMonotonicMs = 0;
     return state;
 }
 

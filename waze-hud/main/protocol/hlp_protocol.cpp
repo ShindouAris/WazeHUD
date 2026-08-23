@@ -159,9 +159,9 @@ void HlpProtocol::sendDeviceDeclaration() {
     constexpr char declaration[] =
         "{\"v\":1,\"t\":\"dev\",\"name\":\"LILYGO T-Display-S3\",\"fw\":\"1.0.0\","
         "\"proto\":[1],\"disp\":{\"w\":320,\"h\":170,\"color\":1},"
-        "\"can\":[\"speed\",\"limit\",\"turn\",\"street\",\"eta\",\"avgzone\",\"alerts\"],"
+        "\"can\":[\"speed\",\"limit\",\"turn\",\"lanes\",\"street\",\"eta\",\"avgzone\",\"alerts\"],"
         "\"want\":{\"rate\":4,\"fields\":[\"nav\",\"spd\",\"lim\",\"over\",\"trn\",\"trn2\","
-        "\"dst\",\"exit\",\"st\",\"st2\",\"eta\",\"rmin\",\"rm\",\"rkm\",\"avg\",\"avgL\",\"avgR\","
+        "\"dst\",\"exit\",\"lan\",\"st\",\"st2\",\"eta\",\"rmin\",\"rm\",\"rkm\",\"avg\",\"avgL\",\"avgR\","
         "\"avgP\",\"alr\",\"alrD\",\"alrV\",\"alrs\"]},\"transport\":\"ble\"}";
     static_assert(sizeof(declaration) <= HLP_MAX_FRAME, "dev declaration exceeds HLP frame limit");
     sendEntry(declaration, nullptr);

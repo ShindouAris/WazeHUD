@@ -45,7 +45,8 @@ idf.py -B build-mock `
 idf.py -B build-mock -D SDKCONFIG=./sdkconfig.mock build
 ```
 
-Mock-only lanes and minimum speed are internal state capabilities. The HLP decoder always clears them because HLP/1 defines no corresponding wire fields.
+Minimum speed remains a mock-only internal capability. Lane guidance is available through the
+opt-in HLP/1 field `lan`; the decoder clears it naturally when Android sends `"lan":[]`.
 
 ## Architecture
 
@@ -137,7 +138,7 @@ The supplied `waze-hud-link-sdk-ai-bundle.md` is normative. The implementation u
 - Alert distance text is blue for valid distances below 500 m and keeps its normal color at 500 m or farther
 - `avg` is rendered as a Vietnamese no-passing zone, never as an average-speed camera
 
-The state decoder supports `nav`, `spd`, `lim`, `over`, `trn`, `trn2`, `dst`, `exit`, `st`, `st2`, `eta`, `rmin`, `rm`, `rkm`, `avg`, `avgL`, `avgR`, `avgP`, `alr`, `alrD`, `alrV`, `alrs`, and `ts`. It implements maneuver codes `0..19` and alert codes `0..74`. Prefer exact `rm` meters for display and use `rkm` only as the legacy fallback.
+The state decoder supports `nav`, `spd`, `lim`, `over`, `trn`, `trn2`, `dst`, `exit`, `lan`, `st`, `st2`, `eta`, `rmin`, `rm`, `rkm`, `avg`, `avgL`, `avgR`, `avgP`, `alr`, `alrD`, `alrV`, `alrs`, and `ts`. It implements maneuver codes `0..19` and alert codes `0..74`. Prefer exact `rm` meters for display and use `rkm` only as the legacy fallback.
 
 ## Configure the device from Waze
 

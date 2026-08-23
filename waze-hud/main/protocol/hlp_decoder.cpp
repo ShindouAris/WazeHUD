@@ -2,6 +2,7 @@
 
 #include "protocol/hlp_core.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -29,6 +30,15 @@ uint32_t unsigned32Or(const cJSON *root, const char *key, uint32_t fallback) {
         std::floor(item->valuedouble) != item->valuedouble || item->valuedouble < 0.0 ||
         item->valuedouble > 4294967295.0) return fallback;
     return static_cast<uint32_t>(item->valuedouble);
+}
+
+int64_t integer64Or(const cJSON *root, const char *key, int64_t fallback) {
+    const cJSON *item = cJSON_GetObjectItemCaseSensitive(root, key);
+    if (!cJSON_IsNumber(item) || !std::isfinite(item->valuedouble) ||
+        std::floor(item->valuedouble) != item->valuedouble ||
+        item->valuedouble < -9007199254740991.0 || item->valuedouble > 9007199254740991.0)
+        return fallback;
+    return static_cast<int64_t>(item->valuedouble);
 }
 
 template <std::size_t Capacity>
@@ -71,18 +81,25 @@ bool HlpDecoder::handleHi(const cJSON *root, HudState &state) {
         ESP_LOGW(kTag, "Producer selected unsupported HLP/%d", protocol);
         return false;
     }
+    bool changed = false;
     if (session != session_) {
         const bool connected = state.connected;
         state = {};
         state.connected = connected;
         session_ = session;
-        state.sessionId = session_;
         haveTimestamp_ = false;
         ESP_LOGI(kTag, "HLP session %lu established", static_cast<unsigned long>(session_));
-        return true;
+        changed = true;
     }
     state.sessionId = session_;
-    return false;
+    const int64_t unixSeconds = integer64Or(root, "unix", 0);
+    if (unixSeconds > 0) {
+        state.clockUnixSeconds = unixSeconds;
+        state.timezoneOffsetMinutes = std::clamp(integerOr(root, "tz", 0), -840, 840);
+        state.clockSyncMonotonicMs = static_cast<uint64_t>(esp_timer_get_time() / 1000);
+        changed = true;
+    }
+    return changed;
 }
 
 bool HlpDecoder::decodeState(const cJSON *root, HudState &state) {
@@ -97,6 +114,9 @@ bool HlpDecoder::decodeState(const cJSON *root, HudState &state) {
     decoded.connected = true;
     decoded.hasProducerState = true;
     decoded.sessionId = session_;
+    decoded.clockUnixSeconds = state.clockUnixSeconds;
+    decoded.timezoneOffsetMinutes = state.timezoneOffsetMinutes;
+    decoded.clockSyncMonotonicMs = state.clockSyncMonotonicMs;
     decoded.navigationActive = integerOr(root, "nav", 0) != 0;
     decoded.speedKmh = std::clamp(integerOr(root, "spd", 0), 0, 999);
     decoded.speedLimitKmh = std::max(0, integerOr(root, "lim", 0));
@@ -167,10 +187,32 @@ bool HlpDecoder::decodeState(const cJSON *root, HudState &state) {
         }
     }
 
-    // No HLP/1 fields exist for these capabilities. Real protocol state always
-    // clears them; only the compile-time mock source may populate them.
+    const cJSON *lanes = cJSON_GetObjectItemCaseSensitive(root, "lan");
+    if (cJSON_IsArray(lanes)) {
+        const cJSON *lane = nullptr;
+        cJSON_ArrayForEach(lane, lanes) {
+            if (decoded.laneCount >= kMaxLanes) break;
+            if (!cJSON_IsArray(lane) || cJSON_GetArraySize(lane) != 2) continue;
+            const cJSON *directionsItem = cJSON_GetArrayItem(lane, 0);
+            const cJSON *selectedItem = cJSON_GetArrayItem(lane, 1);
+            if (!cJSON_IsNumber(directionsItem) || !cJSON_IsNumber(selectedItem)
+                    || !std::isfinite(directionsItem->valuedouble)
+                    || !std::isfinite(selectedItem->valuedouble)
+                    || std::floor(directionsItem->valuedouble) != directionsItem->valuedouble
+                    || std::floor(selectedItem->valuedouble) != selectedItem->valuedouble
+                    || directionsItem->valuedouble <= 0.0 || directionsItem->valuedouble > 255.0
+                    || selectedItem->valuedouble < 0.0 || selectedItem->valuedouble > 255.0) continue;
+            const int directions = static_cast<int>(directionsItem->valuedouble);
+            const int selected = static_cast<int>(selectedItem->valuedouble);
+            if ((selected & ~directions) != 0) continue;
+            LaneState &target = decoded.lanes[decoded.laneCount++];
+            target.directionMask = static_cast<uint8_t>(directions);
+            target.selectedMask = static_cast<uint8_t>(selected);
+        }
+    }
+
+    // Minimum-speed state has no HLP/1 field yet. Only the compile-time mock may populate it.
     decoded.hasMinimumSpeed = false;
-    decoded.laneCount = 0;
     decoded.producerTimestamp = timestamp;
     state = decoded;
     lastTimestamp_ = timestamp;

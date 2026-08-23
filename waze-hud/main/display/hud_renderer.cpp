@@ -4,6 +4,7 @@
 #include "display/display_driver.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
@@ -45,6 +46,20 @@ uint16_t alertDistanceColor(int distanceM, uint16_t normalColor) {
     return distanceM >= 0 && distanceM < 500 ? colors::Blue : normalColor;
 }
 
+int64_t localClockMinute(const HudState &state) {
+    if (state.clockUnixSeconds <= 0) return INT64_MIN;
+    const uint64_t nowMs = static_cast<uint64_t>(esp_timer_get_time() / 1000);
+    const uint64_t elapsedSeconds = nowMs >= state.clockSyncMonotonicMs
+        ? (nowMs - state.clockSyncMonotonicMs) / 1000U : 0U;
+    return (state.clockUnixSeconds + static_cast<int64_t>(elapsedSeconds) +
+            static_cast<int64_t>(state.timezoneOffsetMinutes) * 60) / 60;
+}
+
+const char *displayStreet(const HudState &state) {
+    if (state.currentStreet[0] != 0) return state.currentStreet.data();
+    return state.navigationActive ? "Đang điều hướng" : "Đã sẵn sàng";
+}
+
 bool sameRegion(const Rect &left, const Rect &right) {
     return left.x == right.x && left.y == right.y && left.width == right.width &&
            left.height == right.height;
@@ -62,21 +77,49 @@ void arrowHead(Canvas &canvas, int x, int y, int dx, int dy, uint16_t color, int
     }
 }
 
-void drawLane(Canvas &canvas, int x, LaneDirection direction, bool recommended, uint16_t fg) {
-    const uint16_t color = recommended ? fg : colors::Muted;
-    const int thickness = recommended ? 2 : 1;
-    int endX = x, endY = 5;
-    switch (direction) {
-        case LaneDirection::Left: case LaneDirection::SharpLeft: endX = x - 7; endY = 9; break;
-        case LaneDirection::SlightLeft: endX = x - 4; endY = 5; break;
-        case LaneDirection::Right: case LaneDirection::SharpRight: endX = x + 7; endY = 9; break;
-        case LaneDirection::SlightRight: endX = x + 4; endY = 5; break;
-        case LaneDirection::UTurn: endX = x - 6; endY = 15; break;
-        case LaneDirection::Straight: break;
+void laneArrowHead(Canvas &canvas, int x, int y, int dx, int dy, uint16_t color, int thickness) {
+    constexpr int size = 2;
+    if (std::abs(dx) >= std::abs(dy)) {
+        const int sign = dx >= 0 ? 1 : -1;
+        canvas.line(x,y,x-sign*size,y-size,color,thickness);
+        canvas.line(x,y,x-sign*size,y+size,color,thickness);
+    } else {
+        const int sign = dy >= 0 ? 1 : -1;
+        canvas.line(x,y,x-size,y-sign*size,color,thickness);
+        canvas.line(x,y,x+size,y-sign*size,color,thickness);
     }
-    canvas.line(x, 27, x, 15, color, thickness);
-    canvas.line(x, 15, endX, endY, color, thickness);
-    arrowHead(canvas, endX, endY, endX - x, endY - 15, color, thickness);
+}
+
+void drawLane(Canvas &canvas, int x, int branchWidth, const LaneState &lane, uint16_t fg) {
+    const bool recommendedLane = lane.selectedMask != 0;
+    canvas.line(x,29,x,16,recommendedLane ? fg : colors::Muted,recommendedLane ? 2 : 1);
+    for (int bit = 0; bit < 8; ++bit) {
+        const uint8_t flag = static_cast<uint8_t>(1U << bit);
+        if ((lane.directionMask & flag) == 0) continue;
+        const bool selected = (lane.selectedMask & flag) != 0;
+        const uint16_t color = selected ? fg : colors::Muted;
+        const int thickness = selected ? 2 : 1;
+        int endX = x;
+        int endY = 5;
+        switch (bit) {
+            case 1: endX = x - std::max(1, branchWidth / 2); endY = 6; break;
+            case 2: endX = x - branchWidth; endY = 9; break;
+            case 3: endX = x - branchWidth; endY = 13; break;
+            case 4: endX = x + std::max(1, branchWidth / 2); endY = 6; break;
+            case 5: endX = x + branchWidth; endY = 9; break;
+            case 6: endX = x + branchWidth; endY = 13; break;
+            case 7:
+                endX = x - branchWidth;
+                endY = 15;
+                canvas.line(x,16,endX,10,color,thickness);
+                canvas.line(endX,10,endX,15,color,thickness);
+                laneArrowHead(canvas,endX,15,0,1,color,thickness);
+                continue;
+            default: break;
+        }
+        canvas.line(x,16,endX,endY,color,thickness);
+        laneArrowHead(canvas,endX,endY,endX-x,endY-16,color,thickness);
+    }
 }
 
 const assets::AlphaMask *maneuverAsset(Maneuver maneuver) {
@@ -251,6 +294,41 @@ esp_err_t HudRenderer::init() {
 }
 
 void HudRenderer::render(const HudState &state, const DeviceSettings &settings) {
+    const int64_t currentClockMinute = localClockMinute(state);
+    const bool streetChanged = firstFrame_ || !sameText(state.currentStreet, previous_.currentStreet);
+    const int availableStreetWidth = currentClockMinute != INT64_MIN ? 248 : 310;
+    Canvas metrics(buffer_, layout::Street.width, layout::Street.height);
+    const int streetWidth = settings.showStreet
+        ? metrics.fontTextWidth(displayStreet(state), assets::kTextMedium) : 0;
+    const bool shouldMarquee = state.connected && state.hasProducerState && settings.showStreet &&
+                               streetWidth > availableStreetWidth;
+    const uint64_t nowMs = static_cast<uint64_t>(esp_timer_get_time() / 1000);
+    if (!shouldMarquee) {
+        marqueeActive_ = false;
+        marqueeOffset_ = 0;
+    } else {
+        if (!marqueeActive_ || streetChanged || streetWidth != marqueeTextWidth_ ||
+            availableStreetWidth != marqueeAvailableWidth_) {
+            marqueeEpochMs_ = nowMs;
+            marqueeOffset_ = 0;
+            marqueeRenderedOffset_ = -1;
+        }
+        marqueeActive_ = true;
+        marqueeTextWidth_ = streetWidth;
+        marqueeAvailableWidth_ = availableStreetWidth;
+        constexpr uint64_t kStartHoldMs = 1200;
+        constexpr uint64_t kEndHoldMs = 900;
+        constexpr uint64_t kMsPerPixel = 45;
+        const int overflow = streetWidth - availableStreetWidth;
+        const uint64_t scrollMs = static_cast<uint64_t>(overflow) * kMsPerPixel;
+        const uint64_t cycleMs = kStartHoldMs + scrollMs + kEndHoldMs;
+        const uint64_t elapsed = cycleMs > 0 ? (nowMs - marqueeEpochMs_) % cycleMs : 0;
+        if (elapsed < kStartHoldMs) marqueeOffset_ = 0;
+        else if (elapsed < kStartHoldMs + scrollMs)
+            marqueeOffset_ = std::min(overflow, static_cast<int>((elapsed - kStartHoldMs) / kMsPerPixel));
+        else marqueeOffset_ = overflow;
+    }
+    const bool marqueeFrameChanged = marqueeActive_ && marqueeOffset_ != marqueeRenderedOffset_;
     const bool statusChanged = firstFrame_ || state.connected != previous_.connected ||
                                state.hasProducerState != previous_.hasProducerState ||
                                state.navigationActive != previous_.navigationActive;
@@ -264,10 +342,12 @@ void HudRenderer::render(const HudState &state, const DeviceSettings &settings) 
         if (orientationResult != ESP_OK)
             ESP_LOGE(kTag, "HUD orientation update failed: %s", esp_err_to_name(orientationResult));
     }
+    bool streetRendered = false;
     if (statusChanged || configChanged || !state.connected || !state.hasProducerState) {
         renderRegion(layout::Maneuver,state,settings); renderRegion(layout::Speed,state,settings);
         renderRegion(layout::Limits,state,settings); renderRegion(layout::Alerts,state,settings);
         renderRegion(layout::Street,state,settings);
+        streetRendered = true;
     } else {
         if (maneuverChanged(state, previous_)) renderRegion(layout::Maneuver,state,settings);
         if (state.speedKmh != previous_.speedKmh || state.overSpeed != previous_.overSpeed)
@@ -275,11 +355,17 @@ void HudRenderer::render(const HudState &state, const DeviceSettings &settings) 
         if (state.speedLimitKmh != previous_.speedLimitKmh || state.hasMinimumSpeed != previous_.hasMinimumSpeed ||
             state.minimumSpeedKmh != previous_.minimumSpeedKmh) renderRegion(layout::Limits,state,settings);
         if (alertsChanged(state, previous_)) renderRegion(layout::Alerts,state,settings);
-        if (!sameText(state.currentStreet, previous_.currentStreet) || settings.showStreet != previousSettings_.showStreet)
+        if (streetChanged ||
+            settings.showStreet != previousSettings_.showStreet ||
+            currentClockMinute != renderedClockMinute_ || marqueeFrameChanged) {
             renderRegion(layout::Street,state,settings);
+            streetRendered = true;
+        }
     }
     previous_ = state;
     previousSettings_ = settings;
+    renderedClockMinute_ = currentClockMinute;
+    if (streetRendered) marqueeRenderedOffset_ = marqueeOffset_;
     firstFrame_ = false;
 }
 
@@ -317,8 +403,12 @@ void HudRenderer::renderManeuver(Canvas &canvas, const HudState &state, const De
     canvas.clear(colors::Panel);
     const uint16_t fg = foreground(settings);
     if (state.laneCount > 0) {
-        const int spacing = 70 / std::max(1, static_cast<int>(state.laneCount));
-        for (uint8_t i=0;i<state.laneCount;++i) drawLane(canvas,8+spacing/2+i*spacing,state.lanes[i].direction,state.lanes[i].recommended,fg);
+        const int spacing = std::max(6, 80 / static_cast<int>(state.laneCount));
+        const int totalWidth = spacing * static_cast<int>(state.laneCount);
+        const int firstX = (canvas.width() - totalWidth) / 2 + spacing / 2;
+        const int branchWidth = std::max(2, spacing / 2 - 1);
+        for (uint8_t i=0;i<state.laneCount;++i)
+            drawLane(canvas,firstX+i*spacing,branchWidth,state.lanes[i],fg);
     }
     drawManeuverIcon(canvas,state.maneuver,state.roundaboutExit,fg);
     char distance[16]; formatDistance(state.maneuverDistanceM,distance,sizeof(distance));
@@ -409,11 +499,25 @@ void HudRenderer::renderAlerts(Canvas &canvas, const HudState &state, const Devi
 
 void HudRenderer::renderStreet(Canvas &canvas, const HudState &state, const DeviceSettings &settings) {
     canvas.clear(colors::Panel);
-    if (!settings.showStreet) return;
-    const char *street = state.currentStreet.data();
-    if (!*street) street = state.navigationActive ? "Đang điều hướng" : "Đã sẵn sàng";
-    canvas.fontText(5, 0, street, assets::kTextMedium,
-                    foreground(settings), 310, true);
+    const int64_t minute = localClockMinute(state);
+    const bool haveClock = minute != INT64_MIN;
+    if (settings.showStreet) {
+        const char *street = displayStreet(state);
+        if (marqueeActive_)
+            canvas.fontText(5-marqueeOffset_,0,street,assets::kTextMedium,
+                            foreground(settings),-1,false);
+        else
+            canvas.fontText(5,0,street,assets::kTextMedium,foreground(settings),
+                            haveClock ? 248 : 310,true);
+    }
+    if (haveClock) {
+        // Clip marquee pixels before painting the independent clock column.
+        canvas.fillRect(255,0,65,layout::Street.height,colors::Panel);
+        const int normalizedMinute = static_cast<int>((minute % 1440 + 1440) % 1440);
+        char clock[8];
+        std::snprintf(clock,sizeof(clock),"%02d:%02d",normalizedMinute / 60,normalizedMinute % 60);
+        canvas.fontText(260,0,clock,assets::kTextMedium,colors::Muted,55,true);
+    }
 }
 
 }  // namespace waze_hud

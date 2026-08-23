@@ -5,7 +5,8 @@ config WAZE_HUD_MOCK_MODE
     default n
     help
         Cycle deterministic renderer scenarios without requiring a phone.
-        Mock-only lanes and minimum speed never enter the HLP decoder.
+        Minimum speed remains mock-only; lane guidance also exercises the
+        real HLP/1 direction-mask representation.
 
 config WAZE_HUD_DEFAULT_BRIGHTNESS
     int "Default backlight brightness (percent)"

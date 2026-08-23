@@ -8,7 +8,7 @@ namespace waze_hud {
 
 constexpr std::size_t kMaxStreetUtf8Bytes = 160;
 constexpr std::size_t kMaxAlerts = 4;
-constexpr std::size_t kMaxLanes = 6;
+constexpr std::size_t kMaxLanes = 12;
 
 enum class Maneuver : uint8_t {
     None = 0,
@@ -111,17 +111,6 @@ enum class AlertKind : uint8_t {
     CarNoUTurn = 74,
 };
 
-enum class LaneDirection : uint8_t {
-    Straight,
-    SlightLeft,
-    Left,
-    SharpLeft,
-    SlightRight,
-    Right,
-    SharpRight,
-    UTurn,
-};
-
 struct AlertState {
     AlertKind kind{AlertKind::None};
     int distanceM{-1};
@@ -133,11 +122,11 @@ struct AlertState {
 };
 
 struct LaneState {
-    LaneDirection direction{LaneDirection::Straight};
-    bool recommended{false};
+    uint8_t directionMask{0};
+    uint8_t selectedMask{0};
 
     bool operator==(const LaneState &other) const {
-        return direction == other.direction && recommended == other.recommended;
+        return directionMask == other.directionMask && selectedMask == other.selectedMask;
     }
 };
 
@@ -181,6 +170,9 @@ struct HudState {
     uint8_t laneCount{0};
 
     uint32_t sessionId{0};
+    int64_t clockUnixSeconds{0};
+    int timezoneOffsetMinutes{0};
+    uint64_t clockSyncMonotonicMs{0};
     uint32_t producerTimestamp{0};
     uint32_t localGeneration{0};
 };
