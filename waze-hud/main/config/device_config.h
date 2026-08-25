@@ -15,9 +15,10 @@ struct DeviceSettings {
     bool showStreet{true};
     bool mirrorHud{false};
     bool rotateDisplay{false};
+    int8_t overspeedOffsetKmh{0};
     int8_t offsetX{0};
     int8_t offsetY{0};
-    uint32_t revision{3};
+    uint32_t revision{5};
 };
 
 using HlpSendLine = void (*)(const char *line, void *context);

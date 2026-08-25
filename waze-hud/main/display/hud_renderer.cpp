@@ -39,7 +39,15 @@ bool alertsChanged(const HudState &a, const HudState &b) {
 bool hasSettingsChanged(const DeviceSettings &a, const DeviceSettings &b) {
     return a.brightness != b.brightness || a.theme != b.theme || a.showStreet != b.showStreet ||
            a.mirrorHud != b.mirrorHud || a.rotateDisplay != b.rotateDisplay ||
+           a.overspeedOffsetKmh != b.overspeedOffsetKmh ||
            a.offsetX != b.offsetX || a.offsetY != b.offsetY || a.revision != b.revision;
+}
+
+bool firmwareOverspeed(const HudState &state, const DeviceSettings &settings) {
+    if (state.speedLimitKmh <= 0) return false;
+    const int threshold = std::max(0, state.speedLimitKmh +
+                                     static_cast<int>(settings.overspeedOffsetKmh));
+    return state.speedKmh >= threshold;
 }
 
 uint16_t alertDistanceColor(int distanceM, uint16_t normalColor) {
@@ -350,7 +358,8 @@ void HudRenderer::render(const HudState &state, const DeviceSettings &settings) 
         streetRendered = true;
     } else {
         if (maneuverChanged(state, previous_)) renderRegion(layout::Maneuver,state,settings);
-        if (state.speedKmh != previous_.speedKmh || state.overSpeed != previous_.overSpeed)
+        if (state.speedKmh != previous_.speedKmh ||
+            state.speedLimitKmh != previous_.speedLimitKmh)
             renderRegion(layout::Speed,state,settings);
         if (state.speedLimitKmh != previous_.speedLimitKmh || state.hasMinimumSpeed != previous_.hasMinimumSpeed ||
             state.minimumSpeedKmh != previous_.minimumSpeedKmh) renderRegion(layout::Limits,state,settings);
@@ -422,7 +431,7 @@ void HudRenderer::renderManeuver(Canvas &canvas, const HudState &state, const De
 
 void HudRenderer::renderSpeed(Canvas &canvas, const HudState &state, const DeviceSettings &settings) {
     canvas.clear(colors::Background);
-    const uint16_t color = state.overSpeed ? colors::Red : foreground(settings);
+    const uint16_t color = firmwareOverspeed(state, settings) ? colors::Red : foreground(settings);
     char speed[5]; std::snprintf(speed,sizeof(speed),"%d",std::clamp(state.speedKmh,0,999));
     canvas.fontText(2,26,speed,assets::kNumberLarge,color,canvas.width()-4,true);
     canvas.fontText(2,90,"km/h",assets::kTextSmall,colors::Muted,canvas.width()-4,true);

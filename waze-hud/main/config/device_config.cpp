@@ -13,8 +13,8 @@ namespace waze_hud {
 namespace {
 constexpr char kTag[] = "CONFIG";
 constexpr char kNamespace[] = "hud_cfg";
-constexpr int kItemCount = 7;
-constexpr uint32_t kSchemaRevision = 3;
+constexpr int kItemCount = 8;
+constexpr uint32_t kSchemaRevision = 5;
 
 bool validBrightness(int value) {
     return value >= 10 && value <= 100 && ((value - 10) % 5) == 0;
@@ -75,6 +75,7 @@ esp_err_t saveSettings(const DeviceSettings &settings) {
     if (result == ESP_OK) result = nvs_set_u8(nvs, "street", settings.showStreet ? 1 : 0);
     if (result == ESP_OK) result = nvs_set_u8(nvs, "mirror", settings.mirrorHud ? 1 : 0);
     if (result == ESP_OK) result = nvs_set_u8(nvs, "rotate", settings.rotateDisplay ? 1 : 0);
+    if (result == ESP_OK) result = nvs_set_i8(nvs, "over_offset", settings.overspeedOffsetKmh);
     if (result == ESP_OK) result = nvs_set_i8(nvs, "offset_x", settings.offsetX);
     if (result == ESP_OK) result = nvs_set_i8(nvs, "offset_y", settings.offsetY);
     if (result == ESP_OK) result = nvs_set_u32(nvs, "revision", settings.revision);
@@ -130,6 +131,8 @@ esp_err_t DeviceConfig::init() {
     if (nvs_get_u8(nvs, "mirror", &byte) == ESP_OK) active_.mirrorHud = byte != 0;
     if (nvs_get_u8(nvs, "rotate", &byte) == ESP_OK) active_.rotateDisplay = byte != 0;
     int8_t offset = 0;
+    if (nvs_get_i8(nvs, "over_offset", &offset) == ESP_OK && offset >= -10 && offset <= 5)
+        active_.overspeedOffsetKmh = offset;
     if (nvs_get_i8(nvs, "offset_x", &offset) == ESP_OK && offset >= -5 && offset <= 5) active_.offsetX = offset;
     if (nvs_get_i8(nvs, "offset_y", &offset) == ESP_OK && offset >= -5 && offset <= 5) active_.offsetY = offset;
     (void)nvs_get_u32(nvs, "revision", &active_.revision);
@@ -215,6 +218,12 @@ void DeviceConfig::publishSchema(HlpSendLine send, void *context) {
     root = schemaItem(settings.revision, "rotate_display", "toggle", "Xoay 180 do (USB ben phai)");
     cJSON_AddBoolToObject(root, "value", settings.rotateDisplay); sendJson(root, send, context);
 
+    root = schemaItem(settings.revision, "overspeed_offset", "slider", "Nguong canh bao toc do");
+    cJSON_AddNumberToObject(root, "value", settings.overspeedOffsetKmh);
+    cJSON_AddNumberToObject(root, "min", -10); cJSON_AddNumberToObject(root, "max", 5);
+    cJSON_AddNumberToObject(root, "step", 1);
+    sendJson(root, send, context);
+
     root = schemaItem(settings.revision, "offset_x", "integer", "Dich ngang");
     cJSON_AddNumberToObject(root, "value", settings.offsetX);
     cJSON_AddNumberToObject(root, "min", -5); cJSON_AddNumberToObject(root, "max", 5); sendJson(root, send, context);
@@ -275,6 +284,9 @@ bool DeviceConfig::handleMessage(const cJSON *root, HlpSendLine send, void *cont
             bit = 1U << 5; valid = cJSON_IsBool(value); if (valid) pending.draft.mirrorHud = cJSON_IsTrue(value);
         } else if (std::strcmp(id->valuestring, "rotate_display") == 0) {
             bit = 1U << 6; valid = cJSON_IsBool(value); if (valid) pending.draft.rotateDisplay = cJSON_IsTrue(value);
+        } else if (std::strcmp(id->valuestring, "overspeed_offset") == 0) {
+            bit = 1U << 7; valid = exactInteger(value, -10, 5, integer);
+            if (valid) pending.draft.overspeedOffsetKmh = static_cast<int8_t>(integer);
         } else if (std::strcmp(id->valuestring, "offset_x") == 0) {
             bit = 1U << 3; valid = exactInteger(value, -5, 5, integer); if (valid) pending.draft.offsetX = integer;
         } else if (std::strcmp(id->valuestring, "offset_y") == 0) {
