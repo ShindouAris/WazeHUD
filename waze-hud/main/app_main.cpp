@@ -171,7 +171,7 @@ HudState baseMock() {
 void mockTask(void *) {
     ESP_LOGW(kTag, "Renderer mock mode enabled; BLE/HLP input is disabled");
     vTaskDelay(pdMS_TO_TICKS(1200));
-    constexpr uint32_t kScenarioCount = 10;
+    constexpr uint32_t kScenarioCount = 11;
     uint32_t scenario = 0;
     for (;;) {
         HudState state = baseMock();
@@ -211,6 +211,11 @@ void mockTask(void *) {
                 state.upcomingAlerts[0] = {AlertKind::Flood, 900, 0};
                 state.upcomingAlerts[1] = {AlertKind::SchoolZone, 1400, 0};
                 state.upcomingAlertCount = 2;
+                break;
+            case 10:
+                state.nearestAlert = {AlertKind::TrafficJam, 420, 0, 4, 18};
+                state.upcomingAlerts[0] = {AlertKind::TrafficJam, 1350, 0, 2, 5};
+                state.upcomingAlertCount = 1;
                 break;
         }
         HudStateStore::instance().publish(state);

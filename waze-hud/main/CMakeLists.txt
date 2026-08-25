@@ -20,3 +20,7 @@ target_compile_options(${COMPONENT_LIB} PRIVATE
     $<$<COMPILE_LANGUAGE:CXX>:-std=gnu++17>
     -Wall -Wextra -Werror=return-type
 )
+
+target_compile_definitions(${COMPONENT_LIB} PRIVATE
+    WAZE_HUD_FIRMWARE_VERSION="${PROJECT_VER}"
+)

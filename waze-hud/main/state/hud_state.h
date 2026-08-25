@@ -31,6 +31,7 @@ enum class Maneuver : uint8_t {
     Arrive = 17,
     FerryReserved = 18,
     RoundaboutStraight = 19,
+    RoundaboutUTurn = 20,
 };
 
 enum class AlertKind : uint8_t {
@@ -115,9 +116,13 @@ struct AlertState {
     AlertKind kind{AlertKind::None};
     int distanceM{-1};
     int valueKmh{0};
+    uint8_t trafficSeverity{0};
+    int trafficDelayMinutes{-1};
 
     bool operator==(const AlertState &other) const {
-        return kind == other.kind && distanceM == other.distanceM && valueKmh == other.valueKmh;
+        return kind == other.kind && distanceM == other.distanceM &&
+               valueKmh == other.valueKmh && trafficSeverity == other.trafficSeverity &&
+               trafficDelayMinutes == other.trafficDelayMinutes;
     }
 };
 

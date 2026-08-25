@@ -30,6 +30,7 @@ MANEUVERS = {
     "ManeuverRoundaboutLeft": "car_big_trans_directions_roundabout_l.png",
     "ManeuverRoundaboutRight": "car_big_trans_directions_roundabout_r.png",
     "ManeuverRoundaboutStraight": "car_big_trans_directions_roundabout_s.png",
+    "ManeuverRoundaboutUTurn": "car_big_trans_directions_roundabout_u.png",
     "ManeuverExitLeft": "car_big_trans_direction_exit_left.png",
     "ManeuverExitRight": "car_big_trans_direction_exit_right.png",
     "ManeuverArrive": "car_big_trans_direction_end.png",
@@ -93,6 +94,12 @@ ALERT_ASSETS = {
     "AlertPersonalSafety": "alerts/bigpin_personal_safety_a.png",
     "AlertNoLeftAndUTurn": "alerts/no_left_and_u_turn.png",
     "AlertNoRightAndUTurn": "alerts/no_right_and_u_turn.png",
+}
+
+TRAFFIC_JAM_ASSETS = {
+    1: "alerts/bigpin_traffic_1.png",
+    2: "alerts/bigpin_traffic_2.png",
+    4: "alerts/bigpin_traffic_4.png",
 }
 
 ALERT_CODE_ASSET = {
@@ -314,6 +321,9 @@ def main() -> None:
     for filename in ALERT_ASSETS.values():
         if not (SOURCE / filename).is_file():
             missing.append(filename)
+    for filename in TRAFFIC_JAM_ASSETS.values():
+        if not (SOURCE / filename).is_file():
+            missing.append(filename)
     for filename in ("font_number.ttf", "font_text.otf"):
         if not (SOURCE / "fonts" / filename).is_file():
             missing.append(filename)
@@ -333,6 +343,12 @@ def main() -> None:
     for name, filename in ALERT_ASSETS.items():
         for suffix, size in (("Large", 44), ("Small", 26)):
             declaration, body = emit_color_bitmap(name + suffix, SOURCE / filename, size)
+            declarations.append(declaration)
+            bodies.append(body)
+    for severity, filename in TRAFFIC_JAM_ASSETS.items():
+        for suffix, size in (("Large", 44), ("Small", 26)):
+            declaration, body = emit_color_bitmap(
+                f"AlertTrafficJam{severity}{suffix}", SOURCE / filename, size)
             declarations.append(declaration)
             bodies.append(body)
 

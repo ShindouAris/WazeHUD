@@ -11,6 +11,9 @@
 
 namespace waze_hud {
 namespace {
+#ifndef WAZE_HUD_FIRMWARE_VERSION
+#define WAZE_HUD_FIRMWARE_VERSION "development"
+#endif
 constexpr char kTag[] = "HLP";
 constexpr TickType_t kStaleTimeout = pdMS_TO_TICKS(3000);
 }
@@ -157,12 +160,13 @@ void HlpProtocol::sendDeviceDeclaration() {
     // remains well inside HLP's 500 ms declaration window.
     vTaskDelay(pdMS_TO_TICKS(150));
     constexpr char declaration[] =
-        "{\"v\":1,\"t\":\"dev\",\"name\":\"LILYGO T-Display-S3\",\"fw\":\"1.0.0\","
+        "{\"v\":1,\"t\":\"dev\",\"name\":\"LILYGO T-Display-S3\",\"fw\":\""
+        WAZE_HUD_FIRMWARE_VERSION "\","
         "\"proto\":[1],\"disp\":{\"w\":320,\"h\":170,\"color\":1},"
         "\"can\":[\"speed\",\"limit\",\"turn\",\"lanes\",\"street\",\"eta\",\"avgzone\",\"alerts\"],"
         "\"want\":{\"rate\":4,\"fields\":[\"nav\",\"spd\",\"lim\",\"over\",\"trn\",\"trn2\","
         "\"dst\",\"exit\",\"lan\",\"st\",\"st2\",\"eta\",\"rmin\",\"rm\",\"rkm\",\"avg\",\"avgL\",\"avgR\","
-        "\"avgP\",\"alr\",\"alrD\",\"alrV\",\"alrs\"]},\"transport\":\"ble\"}";
+        "\"avgP\",\"alr\",\"alrD\",\"alrV\",\"alrS\",\"alrM\",\"alrs\"]},\"transport\":\"ble\"}";
     static_assert(sizeof(declaration) <= HLP_MAX_FRAME, "dev declaration exceeds HLP frame limit");
     sendEntry(declaration, nullptr);
     ESP_LOGI(kTag, "Sent HLP dev declaration requesting 4 Hz");

@@ -28,6 +28,13 @@ bool maneuverChanged(const HudState &a, const HudState &b) {
     return false;
 }
 
+bool isRoundaboutManeuver(Maneuver maneuver) {
+    return maneuver == Maneuver::Roundabout || maneuver == Maneuver::RoundaboutLeft ||
+           maneuver == Maneuver::RoundaboutRight ||
+           maneuver == Maneuver::RoundaboutStraight ||
+           maneuver == Maneuver::RoundaboutUTurn;
+}
+
 bool alertsChanged(const HudState &a, const HudState &b) {
     if (!(a.nearestAlert == b.nearestAlert) || a.upcomingAlertCount != b.upcomingAlertCount ||
         a.noPassingZone != b.noPassingZone || a.noPassingRemainingM != b.noPassingRemainingM) return true;
@@ -149,6 +156,7 @@ const assets::AlphaMask *maneuverAsset(Maneuver maneuver) {
         case Maneuver::RoundaboutLeft: return &assets::kManeuverRoundaboutLeft;
         case Maneuver::RoundaboutRight: return &assets::kManeuverRoundaboutRight;
         case Maneuver::RoundaboutStraight: return &assets::kManeuverRoundaboutStraight;
+        case Maneuver::RoundaboutUTurn: return &assets::kManeuverRoundaboutUTurn;
         case Maneuver::KeepLeft: return &assets::kManeuverExitLeft;
         case Maneuver::KeepRight: return &assets::kManeuverExitRight;
         case Maneuver::ExitLeft: return &assets::kManeuverExitLeft;
@@ -191,9 +199,7 @@ void drawManeuverIcon(Canvas &canvas, Maneuver maneuver, int exit, uint16_t colo
     if (maneuver == Maneuver::None) return;
     if (const assets::AlphaMask *asset = maneuverAsset(maneuver)) {
         canvas.alphaMask(12, 34, *asset, color);
-        if ((maneuver == Maneuver::Roundabout || maneuver == Maneuver::RoundaboutLeft ||
-             maneuver == Maneuver::RoundaboutRight || maneuver == Maneuver::RoundaboutStraight) &&
-            exit > 0) {
+        if (isRoundaboutManeuver(maneuver) && exit > 0) {
             drawRoundaboutExit(canvas,exit,color);
         }
         return;
@@ -205,13 +211,20 @@ void drawManeuverIcon(Canvas &canvas, Maneuver maneuver, int exit, uint16_t colo
         canvas.fillRect(cx, top + 13, 5, 5, colors::Background);
         return;
     }
-    if (maneuver == Maneuver::Roundabout || maneuver == Maneuver::RoundaboutLeft ||
-        maneuver == Maneuver::RoundaboutRight || maneuver == Maneuver::RoundaboutStraight) {
+    if (isRoundaboutManeuver(maneuver)) {
         canvas.circle(cx, 65, 20, color, 4);
         canvas.line(cx, bottom, cx, 83, color, thick);
         if (maneuver == Maneuver::RoundaboutStraight) {
             canvas.line(cx, 45, cx, top, color, thick);
             arrowHead(canvas, cx, top, 0, -1, color, 3);
+            drawRoundaboutExit(canvas,exit,color);
+            return;
+        }
+        if (maneuver == Maneuver::RoundaboutUTurn) {
+            const int endX = cx - 27;
+            canvas.line(cx - 19, 65, endX, 65, color, thick);
+            canvas.line(endX, 65, endX, 78, color, thick);
+            arrowHead(canvas, endX, 78, 0, 1, color, 3);
             drawRoundaboutExit(canvas,exit,color);
             return;
         }
@@ -257,6 +270,51 @@ const assets::ColorBitmap *alertAsset(AlertKind kind, bool dominant) {
     return nullptr;
 }
 
+uint16_t trafficSeverityColor(uint8_t severity) {
+    switch (severity) {
+        case 1: return colors::Green;
+        case 2: return colors::Amber;
+        case 3: return colors::rgb565(255, 112, 24);
+        case 4: case 5: return colors::Red;
+        default: return colors::Muted;
+    }
+}
+
+const assets::ColorBitmap *trafficJamAsset(uint8_t severity, bool dominant) {
+    switch (severity) {
+        case 1: return dominant ? &assets::kAlertTrafficJam1Large
+                                : &assets::kAlertTrafficJam1Small;
+        case 2: return dominant ? &assets::kAlertTrafficJam2Large
+                                : &assets::kAlertTrafficJam2Small;
+        case 4: case 5: return dominant ? &assets::kAlertTrafficJam4Large
+                                        : &assets::kAlertTrafficJam4Small;
+        default: return alertAsset(AlertKind::TrafficJam, dominant);
+    }
+}
+
+const char *trafficSeverityLabel(uint8_t severity) {
+    switch (severity) {
+        case 1: return "NHẸ";
+        case 2: return "VỪA";
+        case 3: return "NẶNG";
+        case 4: return "ĐỨNG IM";
+        case 5: return "ĐƯỜNG ĐÓNG";
+        default: return "KẸT XE";
+    }
+}
+
+void drawTrafficSeverityTicks(Canvas &canvas, int centerX, int y,
+                              uint8_t severity, uint16_t color) {
+    if (severity == 0) return;
+    constexpr int tickWidth = 4;
+    constexpr int gap = 2;
+    constexpr int totalWidth = 5 * tickWidth + 4 * gap;
+    const int startX = centerX - totalWidth / 2;
+    for (int tick = 0; tick < 5; ++tick)
+        canvas.fillRect(startX + tick * (tickWidth + gap), y, tickWidth, 3,
+                        tick < severity ? color : colors::Muted);
+}
+
 void drawAlertIcon(Canvas &canvas, int cx, int cy, int radius, const AlertState &alert, bool dominant) {
     if (alert.kind == AlertKind::None) return;
     if (alert.kind == AlertKind::SpeedDrop) {
@@ -280,10 +338,19 @@ void drawAlertIcon(Canvas &canvas, int cx, int cy, int radius, const AlertState 
         return;
     }
 
-    const assets::ColorBitmap *bitmap = alertAsset(alert.kind, dominant);
+    const bool trafficJam = alert.kind == AlertKind::TrafficJam;
+    const uint16_t severityColor = trafficSeverityColor(alert.trafficSeverity);
+    if (trafficJam && alert.trafficSeverity > 0)
+        canvas.circle(cx, cy, radius + (dominant ? 3 : 2), severityColor,
+                      dominant ? 2 : 1);
+    const assets::ColorBitmap *bitmap = trafficJam
+        ? trafficJamAsset(alert.trafficSeverity, dominant) : alertAsset(alert.kind, dominant);
     if (!bitmap) bitmap = alertAsset(AlertKind::Hazard, dominant);
     if (bitmap && bitmap->pixels && bitmap->alpha) {
         canvas.colorBitmap(cx - bitmap->width / 2, cy - bitmap->height / 2, *bitmap);
+        if (trafficJam && !dominant)
+            drawTrafficSeverityTicks(canvas, cx, cy + radius + 3,
+                                     alert.trafficSeverity, severityColor);
         return;
     }
 
@@ -472,32 +539,31 @@ void HudRenderer::renderMainIndicators(Canvas &canvas, const Rect &region,
 
     if (sameRegion(region, layout::Alerts)) {
         // Compact Bluetooth rune and four RSSI bars in the upper-right corner.
-        constexpr int bluetoothX = 287;
-        constexpr int top = 3;
-        constexpr int bottom = 20;
+        constexpr int bluetoothX = 303;
+        constexpr int top = 2;
+        constexpr int bottom = 14;
         const uint16_t color = bleSignalColor(systemStatus);
         canvas.line(bluetoothX - region.x, top - region.y,
-                    bluetoothX - region.x, bottom - region.y, color, 2);
+                    bluetoothX - region.x, bottom - region.y, color, 1);
         canvas.line(bluetoothX - region.x, top - region.y,
-                    bluetoothX + 6 - region.x, 8 - region.y, color, 2);
-        canvas.line(bluetoothX + 6 - region.x, 8 - region.y,
-                    bluetoothX - 5 - region.x, 16 - region.y, color, 2);
-        canvas.line(bluetoothX - 5 - region.x, 7 - region.y,
-                    bluetoothX + 6 - region.x, 16 - region.y, color, 2);
-        canvas.line(bluetoothX + 6 - region.x, 16 - region.y,
-                    bluetoothX - region.x, bottom - region.y, color, 2);
+                    bluetoothX + 4 - region.x, 6 - region.y, color, 1);
+        canvas.line(bluetoothX + 4 - region.x, 6 - region.y,
+                    bluetoothX - 3 - region.x, 12 - region.y, color, 1);
+        canvas.line(bluetoothX - 3 - region.x, 5 - region.y,
+                    bluetoothX + 4 - region.x, 11 - region.y, color, 1);
+        canvas.line(bluetoothX + 4 - region.x, 11 - region.y,
+                    bluetoothX - region.x, bottom - region.y, color, 1);
 
         int signalBars = 0;
         if (systemStatus.bleConnected) {
-            signalBars = systemStatus.bleRssiDbm >= -55 ? 4 :
-                         systemStatus.bleRssiDbm >= -67 ? 3 :
-                         systemStatus.bleRssiDbm >= -78 ? 2 :
+            signalBars = systemStatus.bleRssiDbm >= -60 ? 3 :
+                         systemStatus.bleRssiDbm >= -75 ? 2 :
                          systemStatus.bleRssiDbm >= -90 ? 1 : 0;
         }
-        for (int bar = 0; bar < 4; ++bar) {
+        for (int bar = 0; bar < 3; ++bar) {
             const int height = 3 + bar * 3;
-            canvas.fillRect(298 + bar * 5 - region.x, 20 - height - region.y,
-                            3, height, bar < signalBars ? color : colors::Muted);
+            canvas.fillRect(310 + bar * 4 - region.x, 14 - height - region.y,
+                            2, height, bar < signalBars ? color : colors::Muted);
         }
     }
 }
@@ -670,6 +736,18 @@ void HudRenderer::renderAlerts(Canvas &canvas, const HudState &state, const Devi
         char distance[16]; formatDistance(primary.distanceM,distance,sizeof(distance));
         canvas.fontText(2,60,distance,assets::kTextSmall,
                         alertDistanceColor(primary.distanceM, foreground(settings)),91,true);
+        if (primary.kind == AlertKind::TrafficJam) {
+            char trafficDetail[48];
+            if (primary.trafficDelayMinutes >= 0)
+                std::snprintf(trafficDetail, sizeof(trafficDetail), "%.20s +%d PH",
+                              trafficSeverityLabel(primary.trafficSeverity),
+                              primary.trafficDelayMinutes);
+            else
+                std::snprintf(trafficDetail, sizeof(trafficDetail), "%.20s",
+                              trafficSeverityLabel(primary.trafficSeverity));
+            canvas.fontText(1,78,trafficDetail,assets::kTextSmall,
+                            trafficSeverityColor(primary.trafficSeverity),93,true);
+        }
     }
 
     if (activeZone) {

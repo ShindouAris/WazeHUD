@@ -52,13 +52,27 @@ void copyUtf8(const cJSON *root, const char *key, std::array<char, Capacity> &de
 }
 
 Maneuver maneuverValue(int value) {
-    return value >= 0 && value <= 19 ? static_cast<Maneuver>(value) : Maneuver::None;
+    return value >= 0 && value <= 20 ? static_cast<Maneuver>(value) : Maneuver::None;
 }
 
 AlertKind alertValue(int value) {
     if (value == 0) return AlertKind::None;
     if (value > 0 && value <= 74) return static_cast<AlertKind>(value);
     return value > 0 ? AlertKind::Hazard : AlertKind::None;
+}
+
+void decodeTrafficDetails(const cJSON *object, const char *severityKey,
+                          const char *delayKey, AlertState &alert) {
+    if (alert.kind != AlertKind::TrafficJam) {
+        alert.trafficSeverity = 0;
+        alert.trafficDelayMinutes = -1;
+        return;
+    }
+    const int severity = integerOr(object, severityKey, 0);
+    alert.trafficSeverity = severity >= 1 && severity <= 5
+        ? static_cast<uint8_t>(severity) : 0;
+    const int delay = integerOr(object, delayKey, -1);
+    alert.trafficDelayMinutes = delay >= 0 ? delay : -1;
 }
 
 bool speedDropTieComesBefore(const AlertState &left, const AlertState &right) {
@@ -144,6 +158,7 @@ bool HlpDecoder::decodeState(const cJSON *root, HudState &state) {
     decoded.nearestAlert.kind = alertValue(integerOr(root, "alr", 0));
     decoded.nearestAlert.distanceM = integerOr(root, "alrD", -1);
     decoded.nearestAlert.valueKmh = std::max(0, integerOr(root, "alrV", 0));
+    decodeTrafficDetails(root, "alrS", "alrM", decoded.nearestAlert);
 
     const cJSON *alerts = cJSON_GetObjectItemCaseSensitive(root, "alrs");
     if (cJSON_IsArray(alerts)) {
@@ -156,6 +171,7 @@ bool HlpDecoder::decodeState(const cJSON *root, HudState &state) {
             alert.kind = alertValue(integerOr(entry, "k", 0));
             alert.distanceM = integerOr(entry, "d", -1);
             alert.valueKmh = std::max(0, integerOr(entry, "v", 0));
+            decodeTrafficDetails(entry, "s", "m", alert);
             if (alert.kind == AlertKind::None) continue;
             bool duplicate = false;
             for (uint8_t index = 0; index < parsedAlertCount && !duplicate; ++index)
