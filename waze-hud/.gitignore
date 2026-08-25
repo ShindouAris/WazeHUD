@@ -5,3 +5,5 @@
 /sdkconfig.mock
 /sdkconfig.mock.old
 backups/
+dist/
+.vscode/

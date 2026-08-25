@@ -14,6 +14,7 @@
 #include "protocol/hlp_protocol.h"
 #include "sdkconfig.h"
 #include "state/hud_state_store.h"
+#include "system/system_status.h"
 #include <cstdio>
 #include <cstring>
 
@@ -22,6 +23,7 @@ namespace {
 constexpr char kTag[] = "APP";
 uint32_t bootSequence = 0;
 constexpr gpio_num_t kOrientationButton = GPIO_NUM_14;
+constexpr TickType_t kLongPressTicks = pdMS_TO_TICKS(1200);
 
 void recordBootReason() {
     nvs_handle_t nvs;
@@ -66,11 +68,24 @@ void orientationButtonTask(void *) {
         if (gpio_get_level(kOrientationButton) == 0) {
             vTaskDelay(pdMS_TO_TICKS(40));
             if (gpio_get_level(kOrientationButton) == 0) {
-                const esp_err_t result = DeviceConfig::instance().toggleRotation();
-                if (result != ESP_OK)
-                    ESP_LOGE(kTag, "Orientation button update failed: %s", esp_err_to_name(result));
-                while (gpio_get_level(kOrientationButton) == 0)
+                const TickType_t pressedAt = xTaskGetTickCount();
+                bool statusVisible = false;
+                while (gpio_get_level(kOrientationButton) == 0) {
+                    if (!statusVisible && xTaskGetTickCount() - pressedAt >= kLongPressTicks) {
+                        SystemStatus::instance().show();
+                        HudStateStore::instance().refresh();
+                        statusVisible = true;
+                    }
                     vTaskDelay(pdMS_TO_TICKS(20));
+                }
+                if (statusVisible) {
+                    SystemStatus::instance().hide();
+                    HudStateStore::instance().refresh();
+                } else {
+                    const esp_err_t result = DeviceConfig::instance().toggleRotation();
+                    if (result != ESP_OK)
+                        ESP_LOGE(kTag, "Orientation button update failed: %s", esp_err_to_name(result));
+                }
             }
         }
         vTaskDelay(pdMS_TO_TICKS(20));
@@ -90,6 +105,14 @@ esp_err_t startOrientationButton() {
     return created == pdPASS ? ESP_OK : ESP_ERR_NO_MEM;
 }
 
+void systemStatusTask(void *) {
+    for (;;) {
+        if (SystemStatus::instance().refresh())
+            HudStateStore::instance().refresh();
+        vTaskDelay(pdMS_TO_TICKS(5000));
+    }
+}
+
 void uiTask(void *) {
     ESP_LOGI(kTag, "UI task started");
     const esp_err_t displayResult = DisplayDriver::instance().init();
@@ -105,14 +128,14 @@ void uiTask(void *) {
         return;
     }
     HudState state = HudStateStore::instance().snapshot();
-    renderer.render(state, DeviceConfig::instance().snapshot());
+    renderer.render(state, DeviceConfig::instance().snapshot(), SystemStatus::instance().snapshot());
     ESP_LOGI(kTag, "Initial UI frame rendered");
     for (;;) {
         const TickType_t timeout = renderer.animationActive() ? pdMS_TO_TICKS(80) : portMAX_DELAY;
         if (HudStateStore::instance().receive(state, timeout))
-            renderer.render(state, DeviceConfig::instance().snapshot());
+            renderer.render(state, DeviceConfig::instance().snapshot(), SystemStatus::instance().snapshot());
         else if (renderer.animationActive())
-            renderer.render(state, DeviceConfig::instance().snapshot());
+            renderer.render(state, DeviceConfig::instance().snapshot(), SystemStatus::instance().snapshot());
     }
 }
 
@@ -214,6 +237,9 @@ extern "C" void app_main() {
     recordBootReason();
     ESP_ERROR_CHECK(DeviceConfig::instance().init());
     ESP_ERROR_CHECK(HudStateStore::instance().init() ? ESP_OK : ESP_ERR_NO_MEM);
+    const esp_err_t statusResult = SystemStatus::instance().init();
+    if (statusResult != ESP_OK)
+        ESP_LOGW("APP", "Battery status unavailable: %s", esp_err_to_name(statusResult));
 
 #if !CONFIG_WAZE_HUD_HEADLESS_DIAGNOSTIC
     const BaseType_t created = xTaskCreatePinnedToCore(uiTask, "hud_ui", 12288, nullptr, 5, nullptr,
@@ -224,6 +250,8 @@ extern "C" void app_main() {
 #endif
 
     ESP_ERROR_CHECK(startOrientationButton());
+    ESP_ERROR_CHECK(xTaskCreate(systemStatusTask, "hud_status", 3072, nullptr, 3, nullptr) == pdPASS
+                        ? ESP_OK : ESP_ERR_NO_MEM);
 
 #if CONFIG_WAZE_HUD_MOCK_MODE
     ESP_ERROR_CHECK(xTaskCreate(mockTask, "hud_mock", 4096, nullptr, 4, nullptr) == pdPASS ? ESP_OK : ESP_ERR_NO_MEM);

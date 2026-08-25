@@ -5,6 +5,7 @@
 #include "freertos/queue.h"
 #include "freertos/task.h"
 #include "host/ble_att.h"
+#include "host/ble_gap.h"
 #include "host/ble_hs.h"
 #include "host/ble_hs_id.h"
 #include "host/ble_uuid.h"
@@ -206,5 +207,18 @@ esp_err_t BleTransport::sendLine(const char *line) {
 }
 
 bool BleTransport::connected() const { return connection.load() != BLE_HS_CONN_HANDLE_NONE; }
+
+bool BleTransport::readRssi(int8_t &rssiDbm) const {
+    const uint16_t handle = connection.load();
+    if (handle == BLE_HS_CONN_HANDLE_NONE) return false;
+    int8_t value = 0;
+    const int result = ble_gap_conn_rssi(handle, &value);
+    if (result != 0) {
+        ESP_LOGW(kTag, "Unable to read connection RSSI: %d", result);
+        return false;
+    }
+    rssiDbm = value;
+    return true;
+}
 
 }  // namespace waze_hud

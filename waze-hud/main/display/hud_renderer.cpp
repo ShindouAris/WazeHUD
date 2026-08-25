@@ -54,18 +54,27 @@ uint16_t alertDistanceColor(int distanceM, uint16_t normalColor) {
     return distanceM >= 0 && distanceM < 500 ? colors::Blue : normalColor;
 }
 
-int64_t localClockMinute(const HudState &state) {
+uint16_t bleSignalColor(const SystemStatusSnapshot &status) {
+    if (!status.bleConnected) return colors::Muted;
+    if (status.bleRssiDbm >= -60) return colors::Green;
+    if (status.bleRssiDbm >= -75) return colors::Blue;
+    if (status.bleRssiDbm >= -85) return colors::Amber;
+    return colors::Red;
+}
+
+int64_t localClockMillis(const HudState &state) {
     if (state.clockUnixSeconds <= 0) return INT64_MIN;
     const uint64_t nowMs = static_cast<uint64_t>(esp_timer_get_time() / 1000);
-    const uint64_t elapsedSeconds = nowMs >= state.clockSyncMonotonicMs
-        ? (nowMs - state.clockSyncMonotonicMs) / 1000U : 0U;
-    return (state.clockUnixSeconds + static_cast<int64_t>(elapsedSeconds) +
-            static_cast<int64_t>(state.timezoneOffsetMinutes) * 60) / 60;
+    const uint64_t elapsedMs = nowMs >= state.clockSyncMonotonicMs
+        ? nowMs - state.clockSyncMonotonicMs : 0U;
+    return state.clockUnixSeconds * 1000LL + static_cast<int64_t>(elapsedMs) +
+           static_cast<int64_t>(state.timezoneOffsetMinutes) * 60000LL;
 }
 
 const char *displayStreet(const HudState &state) {
+    // Hiển thị tên đường
     if (state.currentStreet[0] != 0) return state.currentStreet.data();
-    return state.navigationActive ? "Đang điều hướng" : "Đã sẵn sàng";
+    return "Cầu đường chưa đặt tên";
 }
 
 bool sameRegion(const Rect &left, const Rect &right) {
@@ -149,6 +158,16 @@ const assets::AlphaMask *maneuverAsset(Maneuver maneuver) {
     }
 }
 
+void drawRoundaboutExit(Canvas &canvas, int exit, uint16_t color) {
+    if (exit <= 0) return;
+    char number[12];
+    std::snprintf(number,sizeof(number),"%d",exit);
+    constexpr int centerX = 42;
+    constexpr int width = 36;
+    canvas.fontText(centerX-width/2,65-assets::kNumberMedium.lineHeight/2,
+                    number,assets::kNumberMedium,color,width,true);
+}
+
 enum class SpeedSignContext { Current, AlertLarge, AlertSmall };
 
 const assets::ColorBitmap *speedLimitAsset(int value, SpeedSignContext context) {
@@ -175,9 +194,7 @@ void drawManeuverIcon(Canvas &canvas, Maneuver maneuver, int exit, uint16_t colo
         if ((maneuver == Maneuver::Roundabout || maneuver == Maneuver::RoundaboutLeft ||
              maneuver == Maneuver::RoundaboutRight || maneuver == Maneuver::RoundaboutStraight) &&
             exit > 0) {
-            char number[12];
-            std::snprintf(number, sizeof(number), "%d", exit);
-            canvas.fontText(30, 58, number, assets::kNumberSmall, color, 24, true);
+            drawRoundaboutExit(canvas,exit,color);
         }
         return;
     }
@@ -195,20 +212,14 @@ void drawManeuverIcon(Canvas &canvas, Maneuver maneuver, int exit, uint16_t colo
         if (maneuver == Maneuver::RoundaboutStraight) {
             canvas.line(cx, 45, cx, top, color, thick);
             arrowHead(canvas, cx, top, 0, -1, color, 3);
-            if (exit > 0) {
-                char number[12]; std::snprintf(number, sizeof(number), "%d", exit);
-                canvas.text(cx - 9, 55, number, colors::Background, 2, 18, true);
-            }
+            drawRoundaboutExit(canvas,exit,color);
             return;
         }
         const bool left = maneuver == Maneuver::RoundaboutLeft;
         const int endX = left ? cx - 27 : cx + 27;
         canvas.line(left ? cx - 19 : cx + 19, 65, endX, 65, color, thick);
         arrowHead(canvas, endX, 65, left ? -1 : 1, 0, color, 3);
-        if (exit > 0) {
-            char number[12]; std::snprintf(number, sizeof(number), "%d", exit);
-            canvas.text(cx - 9, 55, number, colors::Background, 2, 18, true);
-        }
+        drawRoundaboutExit(canvas,exit,color);
         return;
     }
     if (maneuver == Maneuver::UTurn || maneuver == Maneuver::UTurnRightReserved) {
@@ -301,8 +312,16 @@ esp_err_t HudRenderer::init() {
     return ESP_OK;
 }
 
-void HudRenderer::render(const HudState &state, const DeviceSettings &settings) {
-    const int64_t currentClockMinute = localClockMinute(state);
+void HudRenderer::render(const HudState &state, const DeviceSettings &settings,
+                         const SystemStatusSnapshot &systemStatus) {
+    const int64_t currentClockMillis = localClockMillis(state);
+    const int64_t currentClockSecond = currentClockMillis == INT64_MIN
+        ? INT64_MIN : currentClockMillis / 1000LL;
+    const int64_t currentClockMinute = currentClockSecond == INT64_MIN
+        ? INT64_MIN : currentClockSecond / 60;
+    const int8_t currentClockPhase = currentClockMillis == INT64_MIN
+        ? -1 : static_cast<int8_t>((currentClockMillis % 1000LL) < 500LL);
+    clockActive_ = state.connected && state.hasProducerState && currentClockSecond != INT64_MIN;
     const bool streetChanged = firstFrame_ || !sameText(state.currentStreet, previous_.currentStreet);
     const int availableStreetWidth = currentClockMinute != INT64_MIN ? 248 : 310;
     Canvas metrics(buffer_, layout::Street.width, layout::Street.height);
@@ -350,46 +369,221 @@ void HudRenderer::render(const HudState &state, const DeviceSettings &settings) 
         if (orientationResult != ESP_OK)
             ESP_LOGE(kTag, "HUD orientation update failed: %s", esp_err_to_name(orientationResult));
     }
+    const bool systemStatusChanged = firstFrame_ || systemStatus != previousSystemStatus_;
+    if (systemStatus.visible) {
+        if (systemStatusChanged || configChanged) {
+            renderRegion(layout::Maneuver,state,settings,systemStatus);
+            renderRegion(layout::Speed,state,settings,systemStatus);
+            renderRegion(layout::Limits,state,settings,systemStatus);
+            renderRegion(layout::Alerts,state,settings,systemStatus);
+            renderRegion(layout::Street,state,settings,systemStatus);
+        }
+        previous_ = state;
+        previousSettings_ = settings;
+        previousSystemStatus_ = systemStatus;
+        firstFrame_ = false;
+        return;
+    }
+    const bool systemStatusClosed = previousSystemStatus_.visible;
     bool streetRendered = false;
-    if (statusChanged || configChanged || !state.connected || !state.hasProducerState) {
-        renderRegion(layout::Maneuver,state,settings); renderRegion(layout::Speed,state,settings);
-        renderRegion(layout::Limits,state,settings); renderRegion(layout::Alerts,state,settings);
-        renderRegion(layout::Street,state,settings);
+    if (systemStatusClosed || statusChanged || configChanged || !state.connected || !state.hasProducerState) {
+        renderRegion(layout::Maneuver,state,settings,systemStatus);
+        renderRegion(layout::Speed,state,settings,systemStatus);
+        renderRegion(layout::Limits,state,settings,systemStatus);
+        renderRegion(layout::Alerts,state,settings,systemStatus);
+        renderRegion(layout::Street,state,settings,systemStatus);
         streetRendered = true;
     } else {
-        if (maneuverChanged(state, previous_)) renderRegion(layout::Maneuver,state,settings);
+        if (maneuverChanged(state, previous_)) renderRegion(layout::Maneuver,state,settings,systemStatus);
         if (state.speedKmh != previous_.speedKmh ||
             state.speedLimitKmh != previous_.speedLimitKmh)
-            renderRegion(layout::Speed,state,settings);
+            renderRegion(layout::Speed,state,settings,systemStatus);
         if (state.speedLimitKmh != previous_.speedLimitKmh || state.hasMinimumSpeed != previous_.hasMinimumSpeed ||
-            state.minimumSpeedKmh != previous_.minimumSpeedKmh) renderRegion(layout::Limits,state,settings);
-        if (alertsChanged(state, previous_)) renderRegion(layout::Alerts,state,settings);
+            state.minimumSpeedKmh != previous_.minimumSpeedKmh) renderRegion(layout::Limits,state,settings,systemStatus);
+        if (alertsChanged(state, previous_)) renderRegion(layout::Alerts,state,settings,systemStatus);
         if (streetChanged ||
             settings.showStreet != previousSettings_.showStreet ||
-            currentClockMinute != renderedClockMinute_ || marqueeFrameChanged) {
-            renderRegion(layout::Street,state,settings);
+            currentClockMinute != renderedClockMinute_ ||
+            currentClockPhase != renderedClockPhase_ || marqueeFrameChanged) {
+            renderRegion(layout::Street,state,settings,systemStatus);
             streetRendered = true;
+        }
+        if (systemStatusChanged) {
+            renderRegion(layout::Speed,state,settings,systemStatus);
+            renderRegion(layout::Limits,state,settings,systemStatus);
+            renderRegion(layout::Alerts,state,settings,systemStatus);
         }
     }
     previous_ = state;
     previousSettings_ = settings;
+    previousSystemStatus_ = systemStatus;
     renderedClockMinute_ = currentClockMinute;
+    renderedClockPhase_ = currentClockPhase;
     if (streetRendered) marqueeRenderedOffset_ = marqueeOffset_;
     firstFrame_ = false;
 }
 
-void HudRenderer::renderRegion(const Rect &region, const HudState &state, const DeviceSettings &settings) {
+void HudRenderer::renderRegion(const Rect &region, const HudState &state,
+                               const DeviceSettings &settings,
+                               const SystemStatusSnapshot &systemStatus) {
     Canvas canvas(buffer_, region.width, region.height);
     canvas.setTranslation(settings.offsetX, settings.offsetY);
-    if (!state.connected || !state.hasProducerState) renderStatus(canvas, region, state, settings);
+    if (systemStatus.visible) renderSystemStatus(canvas, region, systemStatus, settings);
+    else if (!state.connected || !state.hasProducerState) renderStatus(canvas, region, state, settings);
     else if (sameRegion(region, layout::Maneuver)) renderManeuver(canvas,state,settings);
     else if (sameRegion(region, layout::Speed)) renderSpeed(canvas,state,settings);
     else if (sameRegion(region, layout::Limits)) renderLimits(canvas,state,settings);
     else if (sameRegion(region, layout::Alerts)) renderAlerts(canvas,state,settings);
     else renderStreet(canvas,state,settings);
+    if (!systemStatus.visible && state.connected && state.hasProducerState)
+        renderMainIndicators(canvas, region, systemStatus);
     const esp_err_t result = DisplayDriver::instance().drawRegion(region, buffer_);
     if (result != ESP_OK) ESP_LOGE(kTag, "Dirty region (%d,%d %dx%d) failed: %s",
                                    region.x,region.y,region.width,region.height,esp_err_to_name(result));
+}
+
+void HudRenderer::renderMainIndicators(Canvas &canvas, const Rect &region,
+                                       const SystemStatusSnapshot &systemStatus) {
+    // Battery is centered across the upper HUD. It is omitted entirely when
+    // GPIO4 does not contain a plausible single-cell LiPo voltage.
+    if (systemStatus.batteryPresent &&
+        (sameRegion(region, layout::Speed) || sameRegion(region, layout::Limits))) {
+        constexpr int batteryX = 134;
+        constexpr int batteryY = 5;
+        constexpr int batteryWidth = 20;
+        constexpr int batteryHeight = 11;
+        const uint16_t batteryColor = systemStatus.batteryPercent <= 15 ? colors::Red
+            : systemStatus.batteryPercent <= 35 ? colors::Amber : colors::Green;
+        canvas.fillRect(batteryX - region.x, batteryY - region.y,
+                        batteryWidth, batteryHeight, batteryColor);
+        canvas.fillRect(batteryX + 2 - region.x, batteryY + 2 - region.y,
+                        batteryWidth - 4, batteryHeight - 4, colors::Background);
+        canvas.fillRect(batteryX + batteryWidth - region.x, batteryY + 3 - region.y,
+                        3, batteryHeight - 6, batteryColor);
+        const int fillWidth = (batteryWidth - 6) * systemStatus.batteryPercent / 100;
+        canvas.fillRect(batteryX + 3 - region.x, batteryY + 3 - region.y,
+                        fillWidth, batteryHeight - 6, batteryColor);
+        char percent[8];
+        std::snprintf(percent, sizeof(percent), "%u%%",
+                      static_cast<unsigned>(systemStatus.batteryPercent));
+        canvas.fontText(160 - region.x, 0 - region.y, percent, assets::kTextSmall,
+                        batteryColor, 38, false);
+    }
+
+    if (sameRegion(region, layout::Alerts)) {
+        // Compact Bluetooth rune and four RSSI bars in the upper-right corner.
+        constexpr int bluetoothX = 287;
+        constexpr int top = 3;
+        constexpr int bottom = 20;
+        const uint16_t color = bleSignalColor(systemStatus);
+        canvas.line(bluetoothX - region.x, top - region.y,
+                    bluetoothX - region.x, bottom - region.y, color, 2);
+        canvas.line(bluetoothX - region.x, top - region.y,
+                    bluetoothX + 6 - region.x, 8 - region.y, color, 2);
+        canvas.line(bluetoothX + 6 - region.x, 8 - region.y,
+                    bluetoothX - 5 - region.x, 16 - region.y, color, 2);
+        canvas.line(bluetoothX - 5 - region.x, 7 - region.y,
+                    bluetoothX + 6 - region.x, 16 - region.y, color, 2);
+        canvas.line(bluetoothX + 6 - region.x, 16 - region.y,
+                    bluetoothX - region.x, bottom - region.y, color, 2);
+
+        int signalBars = 0;
+        if (systemStatus.bleConnected) {
+            signalBars = systemStatus.bleRssiDbm >= -55 ? 4 :
+                         systemStatus.bleRssiDbm >= -67 ? 3 :
+                         systemStatus.bleRssiDbm >= -78 ? 2 :
+                         systemStatus.bleRssiDbm >= -90 ? 1 : 0;
+        }
+        for (int bar = 0; bar < 4; ++bar) {
+            const int height = 3 + bar * 3;
+            canvas.fillRect(298 + bar * 5 - region.x, 20 - height - region.y,
+                            3, height, bar < signalBars ? color : colors::Muted);
+        }
+    }
+}
+
+void HudRenderer::renderSystemStatus(Canvas &canvas, const Rect &region,
+                                     const SystemStatusSnapshot &systemStatus,
+                                     const DeviceSettings &settings) {
+    canvas.clear(colors::Background);
+    const uint16_t fg = foreground(settings);
+    canvas.fontText(0 - region.x, 7 - region.y, "TRẠNG THÁI",
+                    assets::kTextMedium, fg, layout::Width, true);
+
+    // Battery body and terminal. The fill is proportional to the estimated
+    // single-cell LiPo charge; an X marks an unavailable/non-battery reading.
+    constexpr int batteryX = 25;
+    constexpr int batteryY = 47;
+    constexpr int batteryWidth = 52;
+    constexpr int batteryHeight = 27;
+    const uint16_t batteryColor = systemStatus.batteryPresent
+        ? (systemStatus.batteryPercent <= 15 ? colors::Red
+           : systemStatus.batteryPercent <= 35 ? colors::Amber : colors::Green)
+        : colors::Muted;
+    canvas.fillRect(batteryX - region.x, batteryY - region.y,
+                    batteryWidth, batteryHeight, batteryColor);
+    canvas.fillRect(batteryX + 3 - region.x, batteryY + 3 - region.y,
+                    batteryWidth - 6, batteryHeight - 6, colors::Background);
+    canvas.fillRect(batteryX + batteryWidth - region.x, batteryY + 8 - region.y,
+                    5, batteryHeight - 16, batteryColor);
+    if (systemStatus.batteryPresent) {
+        const int fillWidth = (batteryWidth - 10) * systemStatus.batteryPercent / 100;
+        canvas.fillRect(batteryX + 5 - region.x, batteryY + 5 - region.y,
+                        fillWidth, batteryHeight - 10, batteryColor);
+    } else {
+        canvas.line(batteryX + 8 - region.x, batteryY + 6 - region.y,
+                    batteryX + batteryWidth - 8 - region.x,
+                    batteryY + batteryHeight - 6 - region.y, colors::Red, 3);
+        canvas.line(batteryX + batteryWidth - 8 - region.x, batteryY + 6 - region.y,
+                    batteryX + 8 - region.x,
+                    batteryY + batteryHeight - 6 - region.y, colors::Red, 3);
+    }
+    char batteryText[24];
+    if (systemStatus.batteryPresent)
+        std::snprintf(batteryText, sizeof(batteryText), "PIN %u%%",
+                      static_cast<unsigned>(systemStatus.batteryPercent));
+    else
+        std::snprintf(batteryText, sizeof(batteryText), "KHÔNG CÓ PIN");
+    canvas.fontText(95 - region.x, 49 - region.y, batteryText,
+                    assets::kTextMedium,
+                    batteryColor, 215, false);
+
+    // Bluetooth rune plus four qualitative signal bars.
+    constexpr int bluetoothX = 49;
+    constexpr int bluetoothTop = 92;
+    constexpr int bluetoothBottom = 132;
+    const uint16_t bluetoothColor = bleSignalColor(systemStatus);
+    canvas.line(bluetoothX - region.x, bluetoothTop - region.y,
+                bluetoothX - region.x, bluetoothBottom - region.y, bluetoothColor, 3);
+    canvas.line(bluetoothX - region.x, bluetoothTop - region.y,
+                bluetoothX + 13 - region.x, 103 - region.y, bluetoothColor, 3);
+    canvas.line(bluetoothX + 13 - region.x, 103 - region.y,
+                bluetoothX - 10 - region.x, 122 - region.y, bluetoothColor, 3);
+    canvas.line(bluetoothX - 10 - region.x, 101 - region.y,
+                bluetoothX + 13 - region.x, 122 - region.y, bluetoothColor, 3);
+    canvas.line(bluetoothX + 13 - region.x, 122 - region.y,
+                bluetoothX - region.x, bluetoothBottom - region.y, bluetoothColor, 3);
+
+    int signalBars = 0;
+    if (systemStatus.bleConnected) {
+        signalBars = systemStatus.bleRssiDbm >= -55 ? 4 :
+                     systemStatus.bleRssiDbm >= -67 ? 3 :
+                     systemStatus.bleRssiDbm >= -78 ? 2 :
+                     systemStatus.bleRssiDbm >= -90 ? 1 : 0;
+    }
+    for (int bar = 0; bar < 4; ++bar) {
+        const int height = 5 + bar * 5;
+        canvas.fillRect(69 + bar * 6 - region.x, 132 - height - region.y,
+                        4, height, bar < signalBars ? bluetoothColor : colors::Muted);
+    }
+    char bleText[28];
+    if (systemStatus.bleConnected)
+        std::snprintf(bleText, sizeof(bleText), "BLE %d dBm",
+                      static_cast<int>(systemStatus.bleRssiDbm));
+    else
+        std::snprintf(bleText, sizeof(bleText), "BLE CHƯA KẾT NỐI");
+    canvas.fontText(100 - region.x, 102 - region.y, bleText,
+                    assets::kTextMedium, bluetoothColor, 210, false);
 }
 
 void HudRenderer::renderStatus(Canvas &canvas, const Rect &region, const HudState &state, const DeviceSettings &settings) {
@@ -508,8 +702,9 @@ void HudRenderer::renderAlerts(Canvas &canvas, const HudState &state, const Devi
 
 void HudRenderer::renderStreet(Canvas &canvas, const HudState &state, const DeviceSettings &settings) {
     canvas.clear(colors::Panel);
-    const int64_t minute = localClockMinute(state);
-    const bool haveClock = minute != INT64_MIN;
+    const int64_t millis = localClockMillis(state);
+    const int64_t second = millis == INT64_MIN ? INT64_MIN : millis / 1000LL;
+    const bool haveClock = second != INT64_MIN;
     if (settings.showStreet) {
         const char *street = displayStreet(state);
         if (marqueeActive_)
@@ -522,9 +717,12 @@ void HudRenderer::renderStreet(Canvas &canvas, const HudState &state, const Devi
     if (haveClock) {
         // Clip marquee pixels before painting the independent clock column.
         canvas.fillRect(255,0,65,layout::Street.height,colors::Panel);
+        const int64_t minute = second / 60;
         const int normalizedMinute = static_cast<int>((minute % 1440 + 1440) % 1440);
+        const char separator = (millis % 1000LL) < 500LL ? ':' : ' ';
         char clock[8];
-        std::snprintf(clock,sizeof(clock),"%02d:%02d",normalizedMinute / 60,normalizedMinute % 60);
+        std::snprintf(clock,sizeof(clock),"%02d%c%02d",
+                      normalizedMinute / 60,separator,normalizedMinute % 60);
         canvas.fontText(260,0,clock,assets::kTextMedium,colors::Muted,55,true);
     }
 }

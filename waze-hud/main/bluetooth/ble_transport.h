@@ -23,6 +23,7 @@ public:
     bool receive(BleEvent &event, TickType_t timeout) const;
     esp_err_t sendLine(const char *line);
     bool connected() const;
+    bool readRssi(int8_t &rssiDbm) const;
 };
 
 }  // namespace waze_hud
