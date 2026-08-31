@@ -182,24 +182,43 @@ void drawGlyph(Canvas &canvas, int x, int y, DecodedGlyph glyph, uint16_t color,
 }
 }  // namespace
 
-Canvas::Canvas(uint16_t *pixels, int width, int height) : pixels_(pixels), width_(width), height_(height) {}
+Canvas::Canvas(uint16_t *pixels, int backingWidth, int backingHeight,
+               int logicalWidth, int logicalHeight)
+    : pixels_(pixels), backingWidth_(backingWidth), backingHeight_(backingHeight),
+      width_(logicalWidth > 0 ? logicalWidth : backingWidth),
+      height_(logicalHeight > 0 ? logicalHeight : backingHeight) {}
 
-void Canvas::clear(uint16_t color) { std::fill(pixels_, pixels_ + width_ * height_, color); }
+void Canvas::clear(uint16_t color) {
+    std::fill(pixels_, pixels_ + backingWidth_ * backingHeight_, color);
+}
 
 void Canvas::pixel(int x, int y, uint16_t color) {
     x += translationX_;
     y += translationY_;
-    if (x >= 0 && y >= 0 && x < width_ && y < height_) pixels_[y * width_ + x] = color;
+    if (x < 0 || y < 0 || x >= width_ || y >= height_) return;
+    const int left = x * backingWidth_ / width_;
+    const int right = (x + 1) * backingWidth_ / width_;
+    const int top = y * backingHeight_ / height_;
+    const int bottom = (y + 1) * backingHeight_ / height_;
+    for (int row = top; row < bottom; ++row)
+        std::fill(pixels_ + row * backingWidth_ + left,
+                  pixels_ + row * backingWidth_ + right, color);
 }
 
 void Canvas::fillRect(int x, int y, int width, int height, uint16_t color) {
     x += translationX_;
     y += translationY_;
-    const int left = std::max(0, x), top = std::max(0, y);
-    const int right = std::min(width_, x + width), bottom = std::min(height_, y + height);
-    if (right <= left || bottom <= top) return;
+    const int logicalLeft = std::max(0, x), logicalTop = std::max(0, y);
+    const int logicalRight = std::min(width_, x + width);
+    const int logicalBottom = std::min(height_, y + height);
+    if (logicalRight <= logicalLeft || logicalBottom <= logicalTop) return;
+    const int left = logicalLeft * backingWidth_ / width_;
+    const int right = logicalRight * backingWidth_ / width_;
+    const int top = logicalTop * backingHeight_ / height_;
+    const int bottom = logicalBottom * backingHeight_ / height_;
     for (int row = top; row < bottom; ++row)
-        std::fill(pixels_ + row * width_ + left, pixels_ + row * width_ + right, color);
+        std::fill(pixels_ + row * backingWidth_ + left,
+                  pixels_ + row * backingWidth_ + right, color);
 }
 
 void Canvas::line(int x0, int y0, int x1, int y1, uint16_t color, int thickness) {
@@ -242,19 +261,27 @@ void Canvas::alphaPixel(int x, int y, uint16_t color, uint8_t alpha) {
     x += translationX_;
     y += translationY_;
     if (alpha == 0 || x < 0 || y < 0 || x >= width_ || y >= height_) return;
-    uint16_t &destination = pixels_[y * width_ + x];
-    if (alpha == 255) {
-        destination = color;
-        return;
+    const int left = x * backingWidth_ / width_;
+    const int right = (x + 1) * backingWidth_ / width_;
+    const int top = y * backingHeight_ / height_;
+    const int bottom = (y + 1) * backingHeight_ / height_;
+    for (int row = top; row < bottom; ++row) {
+        for (int column = left; column < right; ++column) {
+            uint16_t &destination = pixels_[row * backingWidth_ + column];
+            if (alpha == 255) {
+                destination = color;
+                continue;
+            }
+            const uint32_t inverse = 255U - alpha;
+            const uint32_t red = ((((color >> 11U) & 0x1FU) * alpha) +
+                                  (((destination >> 11U) & 0x1FU) * inverse) + 127U) / 255U;
+            const uint32_t green = ((((color >> 5U) & 0x3FU) * alpha) +
+                                    (((destination >> 5U) & 0x3FU) * inverse) + 127U) / 255U;
+            const uint32_t blue = (((color & 0x1FU) * alpha) +
+                                   ((destination & 0x1FU) * inverse) + 127U) / 255U;
+            destination = static_cast<uint16_t>((red << 11U) | (green << 5U) | blue);
+        }
     }
-    const uint32_t inverse = 255U - alpha;
-    const uint32_t red = ((((color >> 11U) & 0x1FU) * alpha) +
-                          (((destination >> 11U) & 0x1FU) * inverse) + 127U) / 255U;
-    const uint32_t green = ((((color >> 5U) & 0x3FU) * alpha) +
-                            (((destination >> 5U) & 0x3FU) * inverse) + 127U) / 255U;
-    const uint32_t blue = (((color & 0x1FU) * alpha) +
-                           ((destination & 0x1FU) * inverse) + 127U) / 255U;
-    destination = static_cast<uint16_t>((red << 11U) | (green << 5U) | blue);
 }
 
 void Canvas::alphaMask(int x, int y, const assets::AlphaMask &mask, uint16_t color) {

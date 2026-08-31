@@ -7,6 +7,7 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/portmacro.h"
+#include "sdkconfig.h"
 #include <algorithm>
 #include <array>
 
@@ -14,7 +15,13 @@ namespace waze_hud {
 namespace {
 constexpr char kTag[] = "SYSTEM";
 constexpr adc_unit_t kBatteryAdcUnit = ADC_UNIT_1;
+#if CONFIG_WAZE_HUD_DISPLAY_35_480X320
+constexpr adc_channel_t kBatteryAdcChannel = ADC_CHANNEL_7;  // GPIO8 on ES3C35P.
+constexpr int kBatteryGpio = 8;
+#else
 constexpr adc_channel_t kBatteryAdcChannel = ADC_CHANNEL_3;  // GPIO4 on ESP32-S3.
+constexpr int kBatteryGpio = 4;
+#endif
 constexpr adc_atten_t kBatteryAdcAttenuation = ADC_ATTEN_DB_12;
 constexpr unsigned kSampleCount = 16;
 constexpr int kDividerRatio = 2;
@@ -70,7 +77,7 @@ bool sampleBattery(uint16_t &batteryMillivolts, uint8_t &batteryPercent) {
     if (validSamples == 0) return false;
 
     const int measured = static_cast<int>((sumMillivolts / validSamples) * kDividerRatio);
-    // Above this range GPIO4 is normally seeing USB/charger voltage. Below it
+    // A reading outside the valid one-cell LiPo range cannot produce a safe %.
     // there is no usable battery voltage. Neither condition can yield a safe %.
     if (measured < 2800 || measured > 4400) {
         batteryMillivolts = static_cast<uint16_t>(std::clamp(measured, 0, 65535));
@@ -118,7 +125,7 @@ esp_err_t SystemStatus::init() {
         ESP_LOGW(kTag, "ADC calibration unavailable (%s); using bounded raw conversion",
                  esp_err_to_name(result));
     }
-    ESP_LOGI(kTag, "Battery ADC ready on GPIO4 (2:1 divider)");
+    ESP_LOGI(kTag, "Battery ADC ready on GPIO%d (2:1 divider)", kBatteryGpio);
     return ESP_OK;
 }
 

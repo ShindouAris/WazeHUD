@@ -1,5 +1,20 @@
 menu "Waze HUD firmware"
 
+choice WAZE_HUD_DISPLAY_PROFILE
+    prompt "Display profile"
+    default WAZE_HUD_DISPLAY_TDISPLAY_S3
+
+config WAZE_HUD_DISPLAY_TDISPLAY_S3
+    bool "LILYGO T-Display S3 (320x170 landscape)"
+
+config WAZE_HUD_DISPLAY_35_480X320
+    bool "Generic 3.5-inch layout (480x320 landscape)"
+    help
+        Enables the 480x320 logical HUD layout and HLP display declaration.
+        The panel controller and pin mapping must be supplied by the target BSP.
+
+endchoice
+
 config WAZE_HUD_MOCK_MODE
     bool "Enable renderer mock mode"
     default n

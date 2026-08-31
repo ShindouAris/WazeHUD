@@ -13,6 +13,14 @@ namespace waze_hud {
 namespace {
 constexpr char kTag[] = "DISPLAY";
 
+constexpr int mainY(int value) {
+    return layout::IsLargeDisplay ? value * 5 / 4 : value;
+}
+
+constexpr int screenY(int value) {
+    return layout::IsLargeDisplay ? value * 5 / 4 : value;
+}
+
 uint16_t foreground(const DeviceSettings &settings) {
     return settings.theme == UiTheme::Night ? colors::rgb565(220, 105, 80) : colors::Foreground;
 }
@@ -116,7 +124,8 @@ void laneArrowHead(Canvas &canvas, int x, int y, int dx, int dy, uint16_t color,
 
 void drawLane(Canvas &canvas, int x, int branchWidth, const LaneState &lane, uint16_t fg) {
     const bool recommendedLane = lane.selectedMask != 0;
-    canvas.line(x,29,x,16,recommendedLane ? fg : colors::Muted,recommendedLane ? 2 : 1);
+    canvas.line(x,mainY(29),x,mainY(16),recommendedLane ? fg : colors::Muted,
+                recommendedLane ? 2 : 1);
     for (int bit = 0; bit < 8; ++bit) {
         const uint8_t flag = static_cast<uint8_t>(1U << bit);
         if ((lane.directionMask & flag) == 0) continue;
@@ -124,25 +133,25 @@ void drawLane(Canvas &canvas, int x, int branchWidth, const LaneState &lane, uin
         const uint16_t color = selected ? fg : colors::Muted;
         const int thickness = selected ? 2 : 1;
         int endX = x;
-        int endY = 5;
+        int endY = mainY(5);
         switch (bit) {
-            case 1: endX = x - std::max(1, branchWidth / 2); endY = 6; break;
-            case 2: endX = x - branchWidth; endY = 9; break;
-            case 3: endX = x - branchWidth; endY = 13; break;
-            case 4: endX = x + std::max(1, branchWidth / 2); endY = 6; break;
-            case 5: endX = x + branchWidth; endY = 9; break;
-            case 6: endX = x + branchWidth; endY = 13; break;
+            case 1: endX = x - std::max(1, branchWidth / 2); endY = mainY(6); break;
+            case 2: endX = x - branchWidth; endY = mainY(9); break;
+            case 3: endX = x - branchWidth; endY = mainY(13); break;
+            case 4: endX = x + std::max(1, branchWidth / 2); endY = mainY(6); break;
+            case 5: endX = x + branchWidth; endY = mainY(9); break;
+            case 6: endX = x + branchWidth; endY = mainY(13); break;
             case 7:
                 endX = x - branchWidth;
-                endY = 15;
-                canvas.line(x,16,endX,10,color,thickness);
-                canvas.line(endX,10,endX,15,color,thickness);
-                laneArrowHead(canvas,endX,15,0,1,color,thickness);
+                endY = mainY(15);
+                canvas.line(x,mainY(16),endX,mainY(10),color,thickness);
+                canvas.line(endX,mainY(10),endX,mainY(15),color,thickness);
+                laneArrowHead(canvas,endX,mainY(15),0,1,color,thickness);
                 continue;
             default: break;
         }
-        canvas.line(x,16,endX,endY,color,thickness);
-        laneArrowHead(canvas,endX,endY,endX-x,endY-16,color,thickness);
+        canvas.line(x,mainY(16),endX,endY,color,thickness);
+        laneArrowHead(canvas,endX,endY,endX-x,endY-mainY(16),color,thickness);
     }
 }
 
@@ -172,7 +181,7 @@ void drawRoundaboutExit(Canvas &canvas, int exit, uint16_t color) {
     std::snprintf(number,sizeof(number),"%d",exit);
     constexpr int centerX = 42;
     constexpr int width = 36;
-    canvas.fontText(centerX-width/2,65-assets::kNumberMedium.lineHeight/2,
+    canvas.fontText(centerX-width/2,mainY(65)-assets::kNumberMedium.lineHeight/2,
                     number,assets::kNumberMedium,color,width,true);
 }
 
@@ -193,12 +202,12 @@ const assets::ColorBitmap *speedLimitAsset(int value, SpeedSignContext context) 
 
 void drawManeuverIcon(Canvas &canvas, Maneuver maneuver, int exit, uint16_t color) {
     constexpr int cx = 42;
-    constexpr int top = 38;
-    constexpr int bottom = 92;
+    const int top = mainY(38);
+    const int bottom = mainY(92);
     const int thick = 5;
     if (maneuver == Maneuver::None) return;
     if (const assets::AlphaMask *asset = maneuverAsset(maneuver)) {
-        canvas.alphaMask(12, 34, *asset, color);
+        canvas.alphaMask(12, mainY(34), *asset, color);
         if (isRoundaboutManeuver(maneuver) && exit > 0) {
             drawRoundaboutExit(canvas,exit,color);
         }
@@ -212,53 +221,53 @@ void drawManeuverIcon(Canvas &canvas, Maneuver maneuver, int exit, uint16_t colo
         return;
     }
     if (isRoundaboutManeuver(maneuver)) {
-        canvas.circle(cx, 65, 20, color, 4);
-        canvas.line(cx, bottom, cx, 83, color, thick);
+        canvas.circle(cx, mainY(65), 20, color, 4);
+        canvas.line(cx, bottom, cx, mainY(83), color, thick);
         if (maneuver == Maneuver::RoundaboutStraight) {
-            canvas.line(cx, 45, cx, top, color, thick);
+            canvas.line(cx, mainY(45), cx, top, color, thick);
             arrowHead(canvas, cx, top, 0, -1, color, 3);
             drawRoundaboutExit(canvas,exit,color);
             return;
         }
         if (maneuver == Maneuver::RoundaboutUTurn) {
             const int endX = cx - 27;
-            canvas.line(cx - 19, 65, endX, 65, color, thick);
-            canvas.line(endX, 65, endX, 78, color, thick);
-            arrowHead(canvas, endX, 78, 0, 1, color, 3);
+            canvas.line(cx - 19, mainY(65), endX, mainY(65), color, thick);
+            canvas.line(endX, mainY(65), endX, mainY(78), color, thick);
+            arrowHead(canvas, endX, mainY(78), 0, 1, color, 3);
             drawRoundaboutExit(canvas,exit,color);
             return;
         }
         const bool left = maneuver == Maneuver::RoundaboutLeft;
         const int endX = left ? cx - 27 : cx + 27;
-        canvas.line(left ? cx - 19 : cx + 19, 65, endX, 65, color, thick);
-        arrowHead(canvas, endX, 65, left ? -1 : 1, 0, color, 3);
+        canvas.line(left ? cx - 19 : cx + 19, mainY(65), endX, mainY(65), color, thick);
+        arrowHead(canvas, endX, mainY(65), left ? -1 : 1, 0, color, 3);
         drawRoundaboutExit(canvas,exit,color);
         return;
     }
     if (maneuver == Maneuver::UTurn || maneuver == Maneuver::UTurnRightReserved) {
         const bool right = maneuver == Maneuver::UTurnRightReserved;
         const int side = right ? 1 : -1;
-        canvas.line(cx, bottom, cx, 55, color, thick);
-        canvas.line(cx, 55, cx + side * 16, 43, color, thick);
-        canvas.line(cx + side * 16, 43, cx + side * 27, 55, color, thick);
-        canvas.line(cx + side * 27, 55, cx + side * 27, 68, color, thick);
-        arrowHead(canvas, cx + side * 27, 68, 0, 1, color, 3);
+        canvas.line(cx, bottom, cx, mainY(55), color, thick);
+        canvas.line(cx, mainY(55), cx + side * 16, mainY(43), color, thick);
+        canvas.line(cx + side * 16, mainY(43), cx + side * 27, mainY(55), color, thick);
+        canvas.line(cx + side * 27, mainY(55), cx + side * 27, mainY(68), color, thick);
+        arrowHead(canvas, cx + side * 27, mainY(68), 0, 1, color, 3);
         return;
     }
 
     int endX = cx, endY = top;
     switch (maneuver) {
-        case Maneuver::Left: endX = 15; endY = 53; break;
-        case Maneuver::Right: endX = 69; endY = 53; break;
-        case Maneuver::SlightLeft: case Maneuver::KeepLeft: endX = 21; endY = 42; break;
-        case Maneuver::SlightRight: case Maneuver::KeepRight: endX = 63; endY = 42; break;
-        case Maneuver::SharpLeft: case Maneuver::ExitLeft: endX = 14; endY = 73; break;
-        case Maneuver::SharpRight: case Maneuver::ExitRight: endX = 70; endY = 73; break;
+        case Maneuver::Left: endX = 15; endY = mainY(53); break;
+        case Maneuver::Right: endX = 69; endY = mainY(53); break;
+        case Maneuver::SlightLeft: case Maneuver::KeepLeft: endX = 21; endY = mainY(42); break;
+        case Maneuver::SlightRight: case Maneuver::KeepRight: endX = 63; endY = mainY(42); break;
+        case Maneuver::SharpLeft: case Maneuver::ExitLeft: endX = 14; endY = mainY(73); break;
+        case Maneuver::SharpRight: case Maneuver::ExitRight: endX = 70; endY = mainY(73); break;
         default: break;
     }
-    canvas.line(cx, bottom, cx, 69, color, thick);
-    canvas.line(cx, 69, endX, endY, color, thick);
-    arrowHead(canvas, endX, endY, endX - cx, endY - 69, color, 3);
+    canvas.line(cx, bottom, cx, mainY(69), color, thick);
+    canvas.line(cx, mainY(69), endX, endY, color, thick);
+    arrowHead(canvas, endX, endY, endX - cx, endY - mainY(69), color, 3);
 }
 
 const assets::ColorBitmap *alertAsset(AlertKind kind, bool dominant) {
@@ -493,7 +502,9 @@ void HudRenderer::render(const HudState &state, const DeviceSettings &settings,
 void HudRenderer::renderRegion(const Rect &region, const HudState &state,
                                const DeviceSettings &settings,
                                const SystemStatusSnapshot &systemStatus) {
-    Canvas canvas(buffer_, region.width, region.height);
+    const Rect physicalRegion = layout::physicalRect(region);
+    Canvas canvas(buffer_, physicalRegion.width, physicalRegion.height,
+                  region.width, region.height);
     canvas.setTranslation(settings.offsetX, settings.offsetY);
     if (systemStatus.visible) renderSystemStatus(canvas, region, systemStatus, settings);
     else if (!state.connected || !state.hasProducerState) renderStatus(canvas, region, state, settings);
@@ -504,7 +515,7 @@ void HudRenderer::renderRegion(const Rect &region, const HudState &state,
     else renderStreet(canvas,state,settings);
     if (!systemStatus.visible && state.connected && state.hasProducerState)
         renderMainIndicators(canvas, region, systemStatus);
-    const esp_err_t result = DisplayDriver::instance().drawRegion(region, buffer_);
+    const esp_err_t result = DisplayDriver::instance().drawRegion(physicalRegion, buffer_);
     if (result != ESP_OK) ESP_LOGE(kTag, "Dirty region (%d,%d %dx%d) failed: %s",
                                    region.x,region.y,region.width,region.height,esp_err_to_name(result));
 }
@@ -516,7 +527,7 @@ void HudRenderer::renderMainIndicators(Canvas &canvas, const Rect &region,
     if (systemStatus.batteryPresent &&
         (sameRegion(region, layout::Speed) || sameRegion(region, layout::Limits))) {
         constexpr int batteryX = 134;
-        constexpr int batteryY = 5;
+        const int batteryY = mainY(5);
         constexpr int batteryWidth = 20;
         constexpr int batteryHeight = 11;
         const uint16_t batteryColor = systemStatus.batteryPercent <= 15 ? colors::Red
@@ -533,25 +544,25 @@ void HudRenderer::renderMainIndicators(Canvas &canvas, const Rect &region,
         char percent[8];
         std::snprintf(percent, sizeof(percent), "%u%%",
                       static_cast<unsigned>(systemStatus.batteryPercent));
-        canvas.fontText(160 - region.x, 0 - region.y, percent, assets::kTextSmall,
+        canvas.fontText(160 - region.x, mainY(0) - region.y, percent, assets::kTextSmall,
                         batteryColor, 38, false);
     }
 
     if (sameRegion(region, layout::Alerts)) {
         // Compact Bluetooth rune and four RSSI bars in the upper-right corner.
         constexpr int bluetoothX = 303;
-        constexpr int top = 2;
-        constexpr int bottom = 14;
+        const int top = mainY(2);
+        const int bottom = mainY(14);
         const uint16_t color = bleSignalColor(systemStatus);
         canvas.line(bluetoothX - region.x, top - region.y,
                     bluetoothX - region.x, bottom - region.y, color, 1);
         canvas.line(bluetoothX - region.x, top - region.y,
-                    bluetoothX + 4 - region.x, 6 - region.y, color, 1);
-        canvas.line(bluetoothX + 4 - region.x, 6 - region.y,
-                    bluetoothX - 3 - region.x, 12 - region.y, color, 1);
-        canvas.line(bluetoothX - 3 - region.x, 5 - region.y,
-                    bluetoothX + 4 - region.x, 11 - region.y, color, 1);
-        canvas.line(bluetoothX + 4 - region.x, 11 - region.y,
+                    bluetoothX + 4 - region.x, mainY(6) - region.y, color, 1);
+        canvas.line(bluetoothX + 4 - region.x, mainY(6) - region.y,
+                    bluetoothX - 3 - region.x, mainY(12) - region.y, color, 1);
+        canvas.line(bluetoothX - 3 - region.x, mainY(5) - region.y,
+                    bluetoothX + 4 - region.x, mainY(11) - region.y, color, 1);
+        canvas.line(bluetoothX + 4 - region.x, mainY(11) - region.y,
                     bluetoothX - region.x, bottom - region.y, color, 1);
 
         int signalBars = 0;
@@ -562,7 +573,7 @@ void HudRenderer::renderMainIndicators(Canvas &canvas, const Rect &region,
         }
         for (int bar = 0; bar < 3; ++bar) {
             const int height = 3 + bar * 3;
-            canvas.fillRect(310 + bar * 4 - region.x, 14 - height - region.y,
+            canvas.fillRect(310 + bar * 4 - region.x, mainY(14) - height - region.y,
                             2, height, bar < signalBars ? color : colors::Muted);
         }
     }
@@ -573,13 +584,13 @@ void HudRenderer::renderSystemStatus(Canvas &canvas, const Rect &region,
                                      const DeviceSettings &settings) {
     canvas.clear(colors::Background);
     const uint16_t fg = foreground(settings);
-    canvas.fontText(0 - region.x, 7 - region.y, "TRẠNG THÁI",
+    canvas.fontText(0 - region.x, screenY(7) - region.y, "TRẠNG THÁI",
                     assets::kTextMedium, fg, layout::Width, true);
 
     // Battery body and terminal. The fill is proportional to the estimated
     // single-cell LiPo charge; an X marks an unavailable/non-battery reading.
     constexpr int batteryX = 25;
-    constexpr int batteryY = 47;
+    const int batteryY = screenY(47);
     constexpr int batteryWidth = 52;
     constexpr int batteryHeight = 27;
     const uint16_t batteryColor = systemStatus.batteryPresent
@@ -610,24 +621,24 @@ void HudRenderer::renderSystemStatus(Canvas &canvas, const Rect &region,
                       static_cast<unsigned>(systemStatus.batteryPercent));
     else
         std::snprintf(batteryText, sizeof(batteryText), "KHÔNG CÓ PIN");
-    canvas.fontText(95 - region.x, 49 - region.y, batteryText,
+    canvas.fontText(95 - region.x, screenY(49) - region.y, batteryText,
                     assets::kTextMedium,
                     batteryColor, 215, false);
 
     // Bluetooth rune plus four qualitative signal bars.
     constexpr int bluetoothX = 49;
-    constexpr int bluetoothTop = 92;
-    constexpr int bluetoothBottom = 132;
+    const int bluetoothTop = screenY(92);
+    const int bluetoothBottom = screenY(132);
     const uint16_t bluetoothColor = bleSignalColor(systemStatus);
     canvas.line(bluetoothX - region.x, bluetoothTop - region.y,
                 bluetoothX - region.x, bluetoothBottom - region.y, bluetoothColor, 3);
     canvas.line(bluetoothX - region.x, bluetoothTop - region.y,
-                bluetoothX + 13 - region.x, 103 - region.y, bluetoothColor, 3);
-    canvas.line(bluetoothX + 13 - region.x, 103 - region.y,
-                bluetoothX - 10 - region.x, 122 - region.y, bluetoothColor, 3);
-    canvas.line(bluetoothX - 10 - region.x, 101 - region.y,
-                bluetoothX + 13 - region.x, 122 - region.y, bluetoothColor, 3);
-    canvas.line(bluetoothX + 13 - region.x, 122 - region.y,
+                bluetoothX + 13 - region.x, screenY(103) - region.y, bluetoothColor, 3);
+    canvas.line(bluetoothX + 13 - region.x, screenY(103) - region.y,
+                bluetoothX - 10 - region.x, screenY(122) - region.y, bluetoothColor, 3);
+    canvas.line(bluetoothX - 10 - region.x, screenY(101) - region.y,
+                bluetoothX + 13 - region.x, screenY(122) - region.y, bluetoothColor, 3);
+    canvas.line(bluetoothX + 13 - region.x, screenY(122) - region.y,
                 bluetoothX - region.x, bluetoothBottom - region.y, bluetoothColor, 3);
 
     int signalBars = 0;
@@ -639,7 +650,7 @@ void HudRenderer::renderSystemStatus(Canvas &canvas, const Rect &region,
     }
     for (int bar = 0; bar < 4; ++bar) {
         const int height = 5 + bar * 5;
-        canvas.fillRect(69 + bar * 6 - region.x, 132 - height - region.y,
+        canvas.fillRect(69 + bar * 6 - region.x, screenY(132) - height - region.y,
                         4, height, bar < signalBars ? bluetoothColor : colors::Muted);
     }
     char bleText[28];
@@ -648,23 +659,23 @@ void HudRenderer::renderSystemStatus(Canvas &canvas, const Rect &region,
                       static_cast<int>(systemStatus.bleRssiDbm));
     else
         std::snprintf(bleText, sizeof(bleText), "BLE CHƯA KẾT NỐI");
-    canvas.fontText(100 - region.x, 102 - region.y, bleText,
+    canvas.fontText(100 - region.x, screenY(102) - region.y, bleText,
                     assets::kTextMedium, bluetoothColor, 210, false);
 }
 
 void HudRenderer::renderStatus(Canvas &canvas, const Rect &region, const HudState &state, const DeviceSettings &settings) {
     canvas.clear(colors::Background);
-    canvas.colorBitmap(16 - region.x, 25 - region.y, assets::kBootIcon);
+    canvas.colorBitmap(16 - region.x, screenY(25) - region.y, assets::kBootIcon);
     constexpr int copyX = 120;
     constexpr int copyWidth = 190;
-    canvas.fontText(copyX - region.x, 34 - region.y, "WazeHUD", assets::kTextLarge,
+    canvas.fontText(copyX - region.x, screenY(34) - region.y, "WazeHUD", assets::kTextLarge,
                     colors::Foreground, copyWidth, true);
     const char *status = state.signalStale ? "Mất tín hiệu" : state.connected ? "Đã kết nối" : "Đang chờ thiết bị";
     const uint16_t statusColor = state.signalStale ? colors::Amber : state.connected ? colors::Green : colors::Muted;
-    canvas.fontText(copyX - region.x, 73 - region.y, status, assets::kTextMedium,
+    canvas.fontText(copyX - region.x, screenY(73) - region.y, status, assets::kTextMedium,
                     statusColor, copyWidth, true);
     const char *detail = state.signalStale ? "Đang đợi dữ liệu" : state.connected ? "Đang chờ WazeMod" : "Đang chờ kết nối";
-    canvas.fontText(copyX - region.x, 103 - region.y, detail, assets::kTextSmall,
+    canvas.fontText(copyX - region.x, screenY(103) - region.y, detail, assets::kTextSmall,
                     foreground(settings), copyWidth, true);
 }
 
@@ -681,11 +692,11 @@ void HudRenderer::renderManeuver(Canvas &canvas, const HudState &state, const De
     }
     drawManeuverIcon(canvas,state.maneuver,state.roundaboutExit,fg);
     char distance[16]; formatDistance(state.maneuverDistanceM,distance,sizeof(distance));
-    canvas.fontText(2,108,distance,assets::kTextSmall,fg,81,true);
+    canvas.fontText(2,mainY(108),distance,assets::kTextSmall,fg,81,true);
     if (state.eta[0] != 0) {
         char eta[16];
         std::snprintf(eta, sizeof(eta), "ETA %s", state.eta.data());
-        canvas.fontText(2,124,eta,assets::kTextSmall,colors::Muted,81,true);
+        canvas.fontText(2,mainY(124),eta,assets::kTextSmall,colors::Muted,81,true);
     }
 }
 
@@ -693,8 +704,8 @@ void HudRenderer::renderSpeed(Canvas &canvas, const HudState &state, const Devic
     canvas.clear(colors::Background);
     const uint16_t color = firmwareOverspeed(state, settings) ? colors::Red : foreground(settings);
     char speed[5]; std::snprintf(speed,sizeof(speed),"%d",std::clamp(state.speedKmh,0,999));
-    canvas.fontText(2,26,speed,assets::kNumberLarge,color,canvas.width()-4,true);
-    canvas.fontText(2,90,"km/h",assets::kTextSmall,colors::Muted,canvas.width()-4,true);
+    canvas.fontText(2,mainY(26),speed,assets::kNumberLarge,color,canvas.width()-4,true);
+    canvas.fontText(2,mainY(90),"km/h",assets::kTextSmall,colors::Muted,canvas.width()-4,true);
 }
 
 void HudRenderer::renderLimits(Canvas &canvas, const HudState &state, const DeviceSettings &) {
@@ -702,22 +713,23 @@ void HudRenderer::renderLimits(Canvas &canvas, const HudState &state, const Devi
     if (state.speedLimitKmh > 0) {
         const assets::ColorBitmap *sign = speedLimitAsset(state.speedLimitKmh, SpeedSignContext::Current);
         if (sign && sign->pixels && sign->alpha) {
-            canvas.colorBitmap(30 - sign->width / 2, 48 - sign->height / 2, *sign);
+            canvas.colorBitmap(30 - sign->width / 2, mainY(48) - sign->height / 2, *sign);
         } else {
-            canvas.fillCircle(30,48,28,colors::White); canvas.circle(30,48,28,colors::Red,6);
+            canvas.fillCircle(30,mainY(48),28,colors::White);
+            canvas.circle(30,mainY(48),28,colors::Red,6);
             char value[5]; std::snprintf(value,sizeof(value),"%d",state.speedLimitKmh);
-            canvas.fontText(2,48-assets::kNumberMedium.lineHeight/2,value,
+            canvas.fontText(2,mainY(48)-assets::kNumberMedium.lineHeight/2,value,
                             assets::kNumberMedium,colors::Black,56,true);
         }
     } else if (assets::kNoSpeedCurrent.pixels && assets::kNoSpeedCurrent.alpha) {
         canvas.colorBitmap(30 - assets::kNoSpeedCurrent.width / 2,
-                           48 - assets::kNoSpeedCurrent.height / 2,
+                           mainY(48) - assets::kNoSpeedCurrent.height / 2,
                            assets::kNoSpeedCurrent);
     }
     if (state.hasMinimumSpeed) {
-        canvas.fillCircle(42,101,17,colors::Blue);
+        canvas.fillCircle(42,mainY(101),17,colors::Blue);
         char value[5]; std::snprintf(value,sizeof(value),"%d",state.minimumSpeedKmh);
-        canvas.fontText(25,101-assets::kNumberSmall.lineHeight/2,value,
+        canvas.fontText(25,mainY(101)-assets::kNumberSmall.lineHeight/2,value,
                         assets::kNumberSmall,colors::White,34,true);
     }
 }
@@ -732,9 +744,9 @@ void HudRenderer::renderAlerts(Canvas &canvas, const HudState &state, const Devi
         primary.valueKmh = 0;
     }
     if (primary.kind != AlertKind::None) {
-        drawAlertIcon(canvas,47,34,22,primary,true);
+        drawAlertIcon(canvas,47,mainY(34),22,primary,true);
         char distance[16]; formatDistance(primary.distanceM,distance,sizeof(distance));
-        canvas.fontText(2,60,distance,assets::kTextSmall,
+        canvas.fontText(2,mainY(60),distance,assets::kTextSmall,
                         alertDistanceColor(primary.distanceM, foreground(settings)),91,true);
         if (primary.kind == AlertKind::TrafficJam) {
             char trafficDetail[48];
@@ -745,7 +757,7 @@ void HudRenderer::renderAlerts(Canvas &canvas, const HudState &state, const Devi
             else
                 std::snprintf(trafficDetail, sizeof(trafficDetail), "%.20s",
                               trafficSeverityLabel(primary.trafficSeverity));
-            canvas.fontText(1,78,trafficDetail,assets::kTextSmall,
+            canvas.fontText(1,mainY(78),trafficDetail,assets::kTextSmall,
                             trafficSeverityColor(primary.trafficSeverity),93,true);
         }
     }
@@ -762,17 +774,17 @@ void HudRenderer::renderAlerts(Canvas &canvas, const HudState &state, const Devi
                 upcoming = state.upcomingAlerts[index];
         }
         if (upcoming.kind != AlertKind::None && !(upcoming == primary)) {
-            drawAlertIcon(canvas,47,105,13,upcoming,false);
+            drawAlertIcon(canvas,47,mainY(105),13,upcoming,false);
             char distance[12]; formatDistance(upcoming.distanceM,distance,sizeof(distance));
-            canvas.fontText(24,121,distance,assets::kTextSmall,
+            canvas.fontText(24,mainY(121),distance,assets::kTextSmall,
                             alertDistanceColor(upcoming.distanceM, colors::Muted),47,true);
         }
     } else {
         const uint8_t count = std::min<uint8_t>(2,state.upcomingAlertCount);
         for (uint8_t i=0;i<count;++i) {
-            drawAlertIcon(canvas,20+i*48,105,13,state.upcomingAlerts[i],false);
+            drawAlertIcon(canvas,20+i*48,mainY(105),13,state.upcomingAlerts[i],false);
             char distance[12]; formatDistance(state.upcomingAlerts[i].distanceM,distance,sizeof(distance));
-            canvas.fontText(i*48,121,distance,assets::kTextSmall,
+            canvas.fontText(i*48,mainY(121),distance,assets::kTextSmall,
                             alertDistanceColor(state.upcomingAlerts[i].distanceM, colors::Muted),47,true);
         }
     }

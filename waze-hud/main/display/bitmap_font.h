@@ -8,7 +8,8 @@ namespace waze_hud {
 
 class Canvas {
 public:
-    Canvas(uint16_t *pixels, int width, int height);
+    Canvas(uint16_t *pixels, int backingWidth, int backingHeight,
+           int logicalWidth = 0, int logicalHeight = 0);
 
     void clear(uint16_t color);
     void setTranslation(int x, int y) { translationX_ = x; translationY_ = y; }
@@ -35,6 +36,8 @@ private:
     void alphaPixel(int x, int y, uint16_t color, uint8_t alpha);
 
     uint16_t *pixels_;
+    int backingWidth_;
+    int backingHeight_;
     int width_;
     int height_;
     int translationX_{0};

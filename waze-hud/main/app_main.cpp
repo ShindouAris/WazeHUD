@@ -22,7 +22,11 @@ namespace waze_hud {
 namespace {
 constexpr char kTag[] = "APP";
 uint32_t bootSequence = 0;
+#if CONFIG_WAZE_HUD_DISPLAY_35_480X320
+constexpr gpio_num_t kOrientationButton = GPIO_NUM_0;
+#else
 constexpr gpio_num_t kOrientationButton = GPIO_NUM_14;
+#endif
 constexpr TickType_t kLongPressTicks = pdMS_TO_TICKS(1200);
 
 void recordBootReason() {
@@ -99,7 +103,7 @@ esp_err_t startOrientationButton() {
     config.pull_up_en = GPIO_PULLUP_ENABLE;
     config.pull_down_en = GPIO_PULLDOWN_DISABLE;
     config.intr_type = GPIO_INTR_DISABLE;
-    ESP_RETURN_ON_ERROR(gpio_config(&config), kTag, "GPIO14 orientation button setup failed");
+    ESP_RETURN_ON_ERROR(gpio_config(&config), kTag, "orientation/status button setup failed");
     const BaseType_t created = xTaskCreate(orientationButtonTask, "hud_button", 2560,
                                            nullptr, 3, nullptr);
     return created == pdPASS ? ESP_OK : ESP_ERR_NO_MEM;

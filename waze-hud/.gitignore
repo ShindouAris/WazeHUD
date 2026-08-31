@@ -1,9 +1,16 @@
 /build/
 /build-mock/
+/build-35/
+/build-35-mock/
 /sdkconfig
 /sdkconfig.old
 /sdkconfig.mock
 /sdkconfig.mock.old
+/sdkconfig.35
+/sdkconfig.35.old
+/sdkconfig.35.mock
+/sdkconfig.35.mock.old
 backups/
 dist/
 .vscode/
+/managed_components/

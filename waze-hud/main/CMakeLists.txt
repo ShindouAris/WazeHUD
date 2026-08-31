@@ -13,7 +13,7 @@ idf_component_register(
         "config/device_config.cpp"
         "system/system_status.cpp"
     INCLUDE_DIRS "."
-    REQUIRES bt esp_adc esp_lcd esp_driver_gpio esp_driver_ledc esp_hw_support nvs_flash json
+    REQUIRES bt esp_adc esp_lcd esp_driver_gpio esp_driver_ledc esp_driver_spi esp_hw_support nvs_flash json
 )
 
 target_compile_options(${COMPONENT_LIB} PRIVATE
