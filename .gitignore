@@ -8,3 +8,6 @@ backups/
 waze-hud-link-sdk-ai-bundle.md
 /assets/
 /.vscode/
+managed_components/
+sdkconfig.35**
+build-**
