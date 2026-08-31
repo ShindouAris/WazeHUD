@@ -20,6 +20,8 @@ public:
     void triangle(int x0, int y0, int x1, int y1, int x2, int y2, uint16_t color);
     void alphaMask(int x, int y, const assets::AlphaMask &mask, uint16_t color);
     void colorBitmap(int x, int y, const assets::ColorBitmap &bitmap);
+    void colorBitmapScaled(int x, int y, int width, int height,
+                           const assets::ColorBitmap &bitmap);
 
     int textWidth(const char *utf8, int scale, int maxCells = -1) const;
     void text(int x, int y, const char *utf8, uint16_t color, int scale = 1,

@@ -26,6 +26,7 @@ private:
     void renderMainIndicators(Canvas &canvas, const Rect &region,
                               const SystemStatusSnapshot &systemStatus);
     void renderStatus(Canvas &canvas, const Rect &region, const HudState &state, const DeviceSettings &settings);
+    void renderLargeSpeedLimit(Canvas &canvas, const Rect &region, const HudState &state);
     void renderManeuver(Canvas &canvas, const HudState &state, const DeviceSettings &settings);
     void renderSpeed(Canvas &canvas, const HudState &state, const DeviceSettings &settings);
     void renderLimits(Canvas &canvas, const HudState &state, const DeviceSettings &settings);

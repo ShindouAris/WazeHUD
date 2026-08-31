@@ -44,7 +44,8 @@ bool alertsChanged(const HudState &a, const HudState &b) {
 }
 
 bool hasSettingsChanged(const DeviceSettings &a, const DeviceSettings &b) {
-    return a.brightness != b.brightness || a.theme != b.theme || a.showStreet != b.showStreet ||
+    return a.brightness != b.brightness || a.theme != b.theme ||
+           a.displayMode != b.displayMode || a.showStreet != b.showStreet ||
            a.mirrorHud != b.mirrorHud || a.rotateDisplay != b.rotateDisplay ||
            a.overspeedOffsetKmh != b.overspeedOffsetKmh ||
            a.offsetX != b.offsetX || a.offsetY != b.offsetY || a.revision != b.revision;
@@ -462,11 +463,14 @@ void HudRenderer::render(const HudState &state, const DeviceSettings &settings,
         streetRendered = true;
     } else {
         if (maneuverChanged(state, previous_)) renderRegion(layout::Maneuver,state,settings,systemStatus);
-        if (state.speedKmh != previous_.speedKmh ||
-            state.speedLimitKmh != previous_.speedLimitKmh)
+        if ((settings.displayMode == DisplayMode::CurrentSpeed &&
+             (state.speedKmh != previous_.speedKmh ||
+              state.speedLimitKmh != previous_.speedLimitKmh)) ||
+            (settings.displayMode == DisplayMode::SpeedLimitOnly &&
+             state.speedLimitKmh != previous_.speedLimitKmh))
             renderRegion(layout::Speed,state,settings,systemStatus);
-        if (state.speedLimitKmh != previous_.speedLimitKmh || state.hasMinimumSpeed != previous_.hasMinimumSpeed ||
-            state.minimumSpeedKmh != previous_.minimumSpeedKmh) renderRegion(layout::Limits,state,settings,systemStatus);
+        if (state.speedLimitKmh != previous_.speedLimitKmh)
+            renderRegion(layout::Limits,state,settings,systemStatus);
         if (alertsChanged(state, previous_)) renderRegion(layout::Alerts,state,settings,systemStatus);
         if (streetChanged ||
             settings.showStreet != previousSettings_.showStreet ||
@@ -497,6 +501,9 @@ void HudRenderer::renderRegion(const Rect &region, const HudState &state,
     canvas.setTranslation(settings.offsetX, settings.offsetY);
     if (systemStatus.visible) renderSystemStatus(canvas, region, systemStatus, settings);
     else if (!state.connected || !state.hasProducerState) renderStatus(canvas, region, state, settings);
+    else if (settings.displayMode == DisplayMode::SpeedLimitOnly &&
+             (sameRegion(region, layout::Speed) || sameRegion(region, layout::Limits)))
+        renderLargeSpeedLimit(canvas, region, state);
     else if (sameRegion(region, layout::Maneuver)) renderManeuver(canvas,state,settings);
     else if (sameRegion(region, layout::Speed)) renderSpeed(canvas,state,settings);
     else if (sameRegion(region, layout::Limits)) renderLimits(canvas,state,settings);
@@ -507,6 +514,40 @@ void HudRenderer::renderRegion(const Rect &region, const HudState &state,
     const esp_err_t result = DisplayDriver::instance().drawRegion(region, buffer_);
     if (result != ESP_OK) ESP_LOGE(kTag, "Dirty region (%d,%d %dx%d) failed: %s",
                                    region.x,region.y,region.width,region.height,esp_err_to_name(result));
+}
+
+void HudRenderer::renderLargeSpeedLimit(Canvas &canvas, const Rect &region,
+                                        const HudState &state) {
+    canvas.clear(colors::Background);
+    constexpr int signSize = 120;
+    constexpr int middleWidth = layout::Speed.width + layout::Limits.width;
+    constexpr int signX = layout::Speed.x + (middleWidth - signSize) / 2;
+    constexpr int signY = 17;
+    if (signX >= region.x + region.width || signX + signSize <= region.x ||
+        signY >= region.y + region.height || signY + signSize <= region.y)
+        return;
+    const assets::ColorBitmap *sign = state.speedLimitKmh > 0
+        ? speedLimitAsset(state.speedLimitKmh, SpeedSignContext::Current)
+        : &assets::kNoSpeedCurrent;
+    if (sign && sign->pixels && sign->alpha) {
+        canvas.colorBitmapScaled(signX - region.x, signY - region.y,
+                                 signSize, signSize, *sign);
+        return;
+    }
+
+    // Last-resort dynamic sign only if the requested embedded asset is absent.
+    constexpr int centerX = layout::Width / 2;
+    constexpr int centerY = signY + signSize / 2;
+    constexpr int radius = signSize / 2 - 2;
+    canvas.fillCircle(centerX - region.x, centerY - region.y, radius, colors::White);
+    canvas.circle(centerX - region.x, centerY - region.y, radius, colors::Red, 12);
+    if (state.speedLimitKmh > 0) {
+        char value[12];
+        std::snprintf(value, sizeof(value), "%d", state.speedLimitKmh);
+        canvas.fontText(centerX - radius - region.x,
+                        centerY - assets::kNumberLarge.lineHeight / 2 - region.y,
+                        value, assets::kNumberLarge, colors::Black, radius * 2, true);
+    }
 }
 
 void HudRenderer::renderMainIndicators(Canvas &canvas, const Rect &region,
@@ -713,12 +754,6 @@ void HudRenderer::renderLimits(Canvas &canvas, const HudState &state, const Devi
         canvas.colorBitmap(30 - assets::kNoSpeedCurrent.width / 2,
                            48 - assets::kNoSpeedCurrent.height / 2,
                            assets::kNoSpeedCurrent);
-    }
-    if (state.hasMinimumSpeed) {
-        canvas.fillCircle(42,101,17,colors::Blue);
-        char value[5]; std::snprintf(value,sizeof(value),"%d",state.minimumSpeedKmh);
-        canvas.fontText(25,101-assets::kNumberSmall.lineHeight/2,value,
-                        assets::kNumberSmall,colors::White,34,true);
     }
 }
 

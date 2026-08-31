@@ -277,6 +277,22 @@ void Canvas::colorBitmap(int x, int y, const assets::ColorBitmap &bitmap) {
     }
 }
 
+void Canvas::colorBitmapScaled(int x, int y, int width, int height,
+                               const assets::ColorBitmap &bitmap) {
+    if (!bitmap.pixels || !bitmap.alpha || width <= 0 || height <= 0 ||
+        bitmap.width == 0 || bitmap.height == 0) return;
+    for (int row = 0; row < height; ++row) {
+        const uint16_t sourceRow = static_cast<uint16_t>(
+            static_cast<uint32_t>(row) * bitmap.height / static_cast<uint32_t>(height));
+        for (int column = 0; column < width; ++column) {
+            const uint16_t sourceColumn = static_cast<uint16_t>(
+                static_cast<uint32_t>(column) * bitmap.width / static_cast<uint32_t>(width));
+            const std::size_t index = static_cast<std::size_t>(sourceRow) * bitmap.width + sourceColumn;
+            alphaPixel(x + column, y + row, bitmap.pixels[index], bitmap.alpha[index]);
+        }
+    }
+}
+
 namespace {
 const assets::FontGlyph *fontGlyph(const assets::BitmapFont &font, uint32_t codepoint) {
     std::size_t first = 0;

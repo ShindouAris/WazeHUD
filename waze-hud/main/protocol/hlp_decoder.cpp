@@ -227,8 +227,6 @@ bool HlpDecoder::decodeState(const cJSON *root, HudState &state) {
         }
     }
 
-    // Minimum-speed state has no HLP/1 field yet. Only the compile-time mock may populate it.
-    decoded.hasMinimumSpeed = false;
     decoded.producerTimestamp = timestamp;
     state = decoded;
     lastTimestamp_ = timestamp;

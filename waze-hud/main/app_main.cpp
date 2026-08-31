@@ -154,8 +154,6 @@ HudState baseMock() {
     state.speedLimitKmh = 50;
     state.maneuver = Maneuver::UTurn;
     state.maneuverDistanceM = 350;
-    state.hasMinimumSpeed = true;
-    state.minimumSpeedKmh = 60;
     state.laneCount = 3;
     state.lanes[0] = {0x05, 0x04};  // straight + left, selected left
     state.lanes[1] = {0x01, 0x01};  // straight, selected

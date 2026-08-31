@@ -169,8 +169,6 @@ struct HudState {
     std::array<AlertState, kMaxAlerts> upcomingAlerts{};
     uint8_t upcomingAlertCount{0};
 
-    bool hasMinimumSpeed{false};
-    int minimumSpeedKmh{0};
     std::array<LaneState, kMaxLanes> lanes{};
     uint8_t laneCount{0};
 
