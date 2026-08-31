@@ -1,177 +1,151 @@
-# Waze HUD for LILYGO T-Display-S3
+# WazeHUD cho LILYGO T-Display S3
 
-Native ESP-IDF firmware that receives normative HLP/1 navigation snapshots over BLE and renders a low-latency 320×170 automotive HUD on the LILYGO T-Display-S3.
+Firmware ESP-IDF biến **LILYGO T-Display S3** thành màn hình HUD Bluetooth nhỏ gọn cho Waze/HLP/1. Thiết bị nhận dữ liệu dẫn đường qua BLE, ưu tiên thông tin có thể đọc nhanh: tốc độ, biển giới hạn, hướng rẽ, làn đường, cảnh báo và tên đường.
 
-> This target is the 1.9-inch ST7789V T-Display-S3, not the similarly named AMOLED or S3 Pro boards. The pin map and panel sequence are intentionally board-specific. Physical display orientation, color order, BLE interoperability, and long-duration thermal/power behavior still require validation on the target board.
+<p align="center">
+  <img src="previews/route_with_alerts.jpg" alt="WazeHUD khi đang dẫn đường với các cảnh báo phía trước" width="520">
+</p>
 
-## Build and flash
+> [!IMPORTANT]
+> Đây là màn hình hỗ trợ thông tin, không thay thế cho việc quan sát biển báo, điều kiện giao thông hoặc các quyết định lái xe an toàn.
 
-Prerequisites:
+## Dành cho ai?
 
-- ESP-IDF 5.5.5
-- A non-AMOLED LILYGO T-Display-S3
-- A data-capable USB-C cable
+- Người dùng T-Display S3 muốn có HUD 320×170 kết nối với Waze mod hỗ trợ HLP/1.
+- Người phát triển cần firmware ESP-IDF/NimBLE có kiến trúc tách riêng BLE, HLP, state và renderer.
 
-From an activated ESP-IDF shell:
+<p align="center">
+  <img src="previews/preview_HUD.jpg" alt="LILYGO T-Display S3 dùng làm phần cứng WazeHUD" width="280">
+</p>
 
-```bash
-idf.py set-target esp32s3
-idf.py build
-idf.py -p PORT flash monitor
-```
+## Những gì HUD hiển thị
 
-On this Windows workstation, activate the installed environment first:
+- Tốc độ hiện tại và cảnh báo vượt ngưỡng do firmware tự tính.
+- Biển giới hạn tốc độ; khi bản đồ không có dữ liệu, HUD hiển thị biển `?` thay vì để trống.
+- Hướng rẽ, khoảng cách, vòng xuyến và số lối ra; hỗ trợ lane guidance thực từ HLP/1.
+- Cảnh báo phía trước: cảnh sát, camera, tai nạn, kẹt xe, cấm vượt, giảm tốc và các biển mở rộng.
+- Tên đường Unicode tiếng Việt, ETA, đồng hồ đồng bộ từ producer, pin và RSSI Bluetooth.
+- Chế độ chỉ giới hạn tốc độ lớn: ẩn tốc độ hiện tại nhưng vẫn giữ hướng rẽ, cảnh báo, tên đường, ETA/đồng hồ, pin và BLE.
+
+| Màn chờ kết nối | Dẫn đường |
+| --- | --- |
+| <img src="previews/idle_screen.jpg" alt="WazeHUD chờ điện thoại kết nối" width="340"> | <img src="previews/route.jpg" alt="WazeHUD hiển thị vòng xuyến, tốc độ và ETA" width="340"> |
+
+| Cảnh báo phía trước | Không có tuyến đang hoạt động |
+| --- | --- |
+| <img src="previews/route_with_alerts.jpg" alt="WazeHUD hiển thị nhiều cảnh báo và giới hạn tốc độ" width="340"> | <img src="previews/no_route_with_alert.jpg" alt="WazeHUD hiển thị tốc độ và cảnh báo khi không có tuyến" width="340"> |
+
+| Biển giới hạn lớn | Không có giới hạn tốc độ từ bản đồ |
+| --- | --- |
+| <img src="previews/Big_SPEEDLIMIT.jpg" alt="Chế độ biển giới hạn tốc độ lớn" width="340"> | <img src="previews/small_speedlimit_with_speed.jpg" alt="HUD với biển giới hạn chưa xác định" width="340"> |
+
+## Bắt đầu nhanh
+
+### 1. Flash firmware
+
+Nếu bạn đã có factory BIN, hãy làm theo [hướng dẫn flash tiếng Việt](FLASH_FIRMWARE_VI.md). Tài liệu này gồm cách vào download mode, phân biệt factory/OTA BIN và xử lý lỗi `Connecting...`.
+
+Sau khi flash, điện thoại sẽ nhìn thấy thiết bị BLE tên **`WazeHUD`**.
+
+### 2. Kết nối ứng dụng
+
+1. Bật Bluetooth trên điện thoại.
+2. Mở Waze mod/producer hỗ trợ giao thức HLP/1.
+3. Kết nối tới `WazeHUD` và bật notifications cho characteristic RX.
+4. Khi bắt đầu dẫn đường, HUD tự chuyển sang giao diện dẫn đường.
+
+Firmware gửi `dev` sau khi notifications được bật, yêu cầu state tối đa 4 Hz và xử lý dữ liệu BLE phân mảnh an toàn.
+
+### 3. Điều khiển trên board
+
+| Thao tác | Kết quả |
+| --- | --- |
+| Bấm ngắn KEY | Xoay HUD 180° để đổi vị trí cổng USB. |
+| Giữ KEY khoảng 1,2 giây | Hiện trạng thái pin và RSSI Bluetooth; thả nút để quay lại HUD. |
+
+Phần trăm pin chỉ có ý nghĩa khi board chạy bằng pin. Khi USB-C đang cắm, mạch board không đọc được điện áp pin một cách đáng tin cậy.
+
+## Cấu hình từ ứng dụng
+
+Nếu producer quảng bá capability `device_config`, ứng dụng sẽ nhận schema cấu hình do HUD sở hữu. Cấu hình được lưu vào NVS và tự khôi phục sau khi khởi động lại.
+
+| Mục | Tác dụng |
+| --- | --- |
+| Độ sáng | Điều chỉnh backlight từ 10–100%, bước 5%. |
+| Giao diện | Chọn tự động, ban ngày hoặc ban đêm. |
+| Kiểu hiển thị | `Tốc độ hiện tại` hoặc `Chỉ giới hạn tốc độ`. |
+| Hiện tên đường | Bật/tắt thanh tên đường; tên dài tự chạy marquee. |
+| Phản chiếu HUD | Lật ngang nội dung cho cách lắp HUD khác. |
+| Xoay 180° | Đổi orientation để cổng USB nằm phía bên mong muốn. |
+| Ngưỡng cảnh báo tốc độ | Offset từ -10 đến +5 km/h so với biển giới hạn. |
+| Dịch ngang/dọc | Tinh chỉnh vị trí nội dung trong phạm vi ±5 px. |
+
+Ở chế độ **Chỉ giới hạn tốc độ**, biển giới hạn lớn xuất hiện ở hai cột giữa. Hướng rẽ, cảnh báo, tên đường, ETA/đồng hồ, pin và Bluetooth vẫn được giữ lại.
+
+## Tự build
+
+Yêu cầu: ESP-IDF **5.5.5**, target `esp32s3` và cáp USB-C có dữ liệu.
+
+Trong ESP-IDF PowerShell, chạy tại thư mục project:
 
 ```powershell
-. 'C:\Espressif\tools\Microsoft.v5.5.5.PowerShell_profile.ps1'
-cd D:\Code\WazeHUD\waze-hud
 idf.py set-target esp32s3
 idf.py build
+idf.py -p COM9 flash
 ```
 
-The normal build advertises `WazeHUD` and waits for the Waze Mod HUD Link picker to connect. Do not use Bluetooth virtual COM ports for flashing; an attached ESP32-S3 should appear as a USB serial/JTAG device.
+Thay `COM9` bằng cổng của board. Image ứng dụng được tạo tại `build/waze_hud_tdisplay_s3.bin`.
 
-## Run the renderer without a phone
+### Chạy mock UI không cần điện thoại
 
-Enable **Waze HUD firmware → Enable renderer mock mode** in `idf.py menuconfig`, then build normally. Mock mode disables BLE input and cycles ten deterministic states including lane guidance, minimum speed, extended alerts, a no-passing zone, overspeed, roundabout-straight, disconnect, and a long Vietnamese street name.
-
-For a separate command-line mock build without changing the production `sdkconfig`:
+Mock mode tuần tự hiển thị các tình huống rẽ, cảnh báo, camera, cấm vượt, kẹt xe và tên đường dài để kiểm tra renderer.
 
 ```powershell
 idf.py -B build-mock `
-  -D SDKCONFIG=./sdkconfig.mock `
-  -D "SDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.mock.defaults" `
-  set-target esp32s3
-idf.py -B build-mock -D SDKCONFIG=./sdkconfig.mock build
+    -D SDKCONFIG=sdkconfig.mock `
+    -D "SDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.mock.defaults" `
+    build
+idf.py -B build-mock -p COM9 flash
 ```
 
-Minimum speed remains a mock-only internal capability. Lane guidance is available through the
-opt-in HLP/1 field `lan`; the decoder clears it naturally when Android sends `"lan":[]`.
+Flash lại production bằng `idf.py -B build -p COM9 flash` khi hoàn tất kiểm tra mock.
 
-## Architecture
+## Kiến trúc
 
-```mermaid
-flowchart LR
-    phone[Android / Waze Mod] -->|BLE writes| ble[NimBLE transport]
-    ble -->|bounded chunk queue| protocol[HLP framing task]
-    protocol --> decoder[JSON decoder]
-    decoder -->|fixed snapshot| state[HUD state store]
-    state -->|length-one queue| ui[UI task]
-    config[NVS device config] --> ui
-    ui -->|dirty RGB565 regions| lcd[ST7789V i80 LCD]
-    protocol -->|dev / pong / cfg_ack| ble
+```text
+Android / Waze mod
+        │ BLE GATT
+        ▼
+NimBLE transport ──► HLP/1 framing + JSON decoder ──► HudState snapshot
+                                                              │
+                                                              ▼
+                                                 Dirty-region HUD renderer
+                                                              │
+                                                              ▼
+                                                     ST7789 LCD 320×170
 ```
 
-The callback-to-display path has these boundaries:
+- BLE callback chỉ sao chép chunk vào queue; không parse JSON hoặc vẽ LCD trong callback.
+- Protocol task xử lý HLP line framing, UTF-8, ping/pong, handshake, reconnect và state ordering.
+- Renderer chỉ nhận `HudState` đã chuẩn hóa; không biết JSON hay BLE.
+- Assets và font được nhúng dạng RGB565/alpha mask, không decode PNG trong lúc render.
 
-| Layer | Responsibility | Allocation policy |
-|---|---|---|
-| NimBLE transport | GATT service, TX writes, RX notification chunks, advertising restart | Bounded 16-entry event queue |
-| HLP framing | LF framing, 512-byte limit, UTF-8 validation and resynchronization | Fixed 512-byte receiver |
-| Protocol | Envelope validation, immediate ping/pong, handshake and configuration routing | One long-lived task |
-| Decoder | Default semantics, enum normalization, `(sess, ts)` ordering | Temporary cJSON DOM deleted per frame |
-| State store | Thread-safe immutable snapshot publication | Fixed-capacity strings and arrays |
-| Renderer | Dirty regions, embedded Waze assets, antialiased Vietnamese/font-number rendering | One 26.6 KB internal DMA buffer |
-| Display | ST7789V i80 transfer, landscape transform, PWM backlight | One transfer in flight |
-| Configuration | Staged full-form validation and NVS commit before ACK | One bounded transaction |
+## Cấu trúc project
 
-BLE callbacks only copy bytes or lifecycle events. JSON parsing, configuration storage, and LCD transfers run in separate task contexts.
-
-## Embedded assets and fonts
-
-The firmware uses selected source files from `D:\Code\WazeHUD\assets`:
-
-- Waze maneuver PNGs become 60×60 alpha masks tinted by the active HUD theme.
-- Because the source pack has no dedicated keep-left/right PNG, HLP `KEEP_LEFT/KEEP_RIGHT` use the closest Waze branch assets `exit_left/exit_right` before any procedural fallback.
-- Alert PNGs become RGB565 plus alpha at 44×44 and 26×26; the generated lookup covers the asset-backed HLP alert codes through `74`.
-- Camera enums now remain distinct: speed `2`, phone `40`, dummy `41`, seatbelt `42`, distance `43`, bus-lane `44`, noise `45`, and stop-sign `46`.
-- Known speed limits use `speedLimit/speed_limit_<value>.png` at 56×56, 44×44, and 26×26.
-- HLP `lim=0` renders `speedLimit/no_speed.png` at 56×56 instead of hiding the current-limit region.
-- `App/boot_icon.png` is edge-background-keyed and embedded at 96×96 for the left-aligned boot/connection screen.
-- `font_number.ttf` (TGL Engschrift) supplies dynamic speed and road-sign numerals.
-- `font_text.otf` supplies antialiased labels and the complete precomposed Vietnamese alphabet.
-
-PNG and font decoding never occurs on the ESP32. Generated C++ is checked in at
-`main/assets/generated_assets.cpp`, so the normal ESP-IDF build has no Pillow dependency. To regenerate after changing the source pack, run:
-
-```powershell
-& 'C:\Users\admin\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe' `
-  .\tools\generate_embedded_assets.py
+```text
+main/
+├── bluetooth/   # NimBLE GATT transport
+├── protocol/    # HLP/1 framing, handshake và JSON decoder
+├── state/       # HudState snapshot thread-safe
+├── display/     # ST7789 driver, layout, font và renderer
+├── config/      # Dynamic config + NVS
+└── system/      # Battery/RSSI status
+previews/        # Ảnh chụp HUD trên phần cứng
+tools/           # Sinh asset nhúng từ assets nguồn
 ```
 
-For speed values present in `assets/speedLimit`, the renderer uses the generated sign asset. An unknown value falls back to the dynamic circle-and-number primitive, so legitimate future limits are never hidden.
+## Tài liệu liên quan
 
-## Hardware binding
-
-The driver follows LILYGO's official T-Display-S3 definitions and ESP-IDF example:
-
-| Signal | GPIO |
-|---|---:|
-| Peripheral power | 15 |
-| Backlight PWM | 38 |
-| LCD reset | 5 |
-| LCD CS / DC / WR / RD | 6 / 7 / 8 / 9 |
-| LCD D0–D7 | 39 / 40 / 41 / 42 / 45 / 46 / 47 / 48 |
-
-The ST7789V uses an 8-bit i80 bus at 10 MHz. Initialization enables inversion, swaps XY, mirrors Y for landscape with USB on the left, and applies a `(0, 35)` panel gap. Sources: [LILYGO T-Display-S3](https://github.com/Xinyuan-LilyGO/T-Display-S3) and [LilyGo-Display-IDF](https://github.com/Xinyuan-LilyGO/LilyGo-Display-IDF).
-
-## Protocol behavior
-
-The supplied `waze-hud-link-sdk-ai-bundle.md` is normative. The implementation uses exactly its BLE UUIDs and HLP/1 fields.
-
-- Device name: `WazeHUD`
-- BLE rate request: 4 Hz
-- Framing: UTF-8 JSON object plus LF
-- Maximum frame: 512 bytes including LF
-- Android writes TX with response; firmware notifies RX
-- `dev` is sent after RX notification subscription
-- `ping` receives an immediate `pong`
-- New sessions reset timestamp/state ordering
-- Unknown keys and message types are ignored
-- Missing state fields use HLP/1 defaults
-- `rm` exact meters is requested and preferred; `rkm` remains the legacy fallback
-- Maneuver `19` renders the Waze roundabout-straight asset and keeps the negotiated exit number
-- Alert codes `0..74` are normalized; recognized codes use their mapped asset and unsupported future codes use the generic hazard asset
-- `alrs` is explicitly requested and capped at four entries; its `alrs[0]` mirror is removed from the normalized upcoming list
-- Equal-distance `SPEED_DROP` alerts are normalized with the higher `v` first while preserving producer near-to-far order for every other case
-- Alert UI shows up to two upcoming items; an active `avg=1` no-passing zone takes the dominant slot and reduces the upcoming row to one centered item
-- Alert distance text is blue for valid distances below 500 m and keeps its normal color at 500 m or farther
-- `avg` is rendered as a Vietnamese no-passing zone, never as an average-speed camera
-
-The state decoder supports `nav`, `spd`, `lim`, `over`, `trn`, `trn2`, `dst`, `exit`, `lan`, `st`, `st2`, `eta`, `rmin`, `rm`, `rkm`, `avg`, `avgL`, `avgR`, `avgP`, `alr`, `alrD`, `alrV`, `alrs`, and `ts`. It implements maneuver codes `0..19` and alert codes `0..74`. Prefer exact `rm` meters for display and use `rkm` only as the legacy fallback.
-
-## Configure the device from Waze
-
-When the producer advertises `device_config`, the HUD publishes five controls:
-
-| ID | Type | Validation |
-|---|---|---|
-| `brightness` | Slider | 10–100 in steps of 5 |
-| `theme` | Selection | `auto`, `day`, or `night` |
-| `show_street` | Toggle | Boolean |
-| `mirror_hud` | Toggle | Horizontal windshield-reflection mirror, persisted in NVS |
-| `rotate_display` | Toggle | 180° mounting rotation for USB connector on the right |
-| `offset_x` | Integer | −5 through 5 |
-| `offset_y` | Integer | −5 through 5 |
-
-The seven-item schema has schema version 3. Older stored schemas migrate once, preserving existing values while defaulting new orientation settings off. The firmware stages every value, rejects missing/duplicate/unknown IDs, persists the complete candidate to NVS, increments the value revision, and only then sends a successful `cfg_ack`. A repeated commit receives the previous transaction result instead of applying twice.
-
-GPIO14 is the active-low programmable orientation button. A debounced press toggles `rotate_display`, persists it to NVS, and refreshes the UI without rebooting. GPIO0 remains reserved as the BOOT strap. `mirror_hud` and `rotate_display` compose independently.
-
-## Diagnose hardware
-
-Useful production log tags are `APP`, `DISPLAY`, `BLE`, `HLP`, `STATE`, and `CONFIG`.
-
-| Symptom | Check |
-|---|---|
-| LCD remains dark | Confirm this is the ST7789V T-Display-S3 and GPIO15 is driven high |
-| Wrong orientation | Confirm USB connector is on the left; the alternate physical orientation needs mirror adjustment |
-| Red and blue swapped | Verify `swap_color_bytes` and RGB endian behavior on the physical panel revision |
-| Phone cannot discover HUD | Confirm NimBLE is enabled and the HLP service UUID is advertised |
-| Connects but no state | Confirm Android enabled RX notifications and logs show `dev` then `hi` |
-| `FRAME_TOO_LARGE` behavior | Send more than 511 payload bytes followed by LF and confirm the next valid line is accepted |
-| Street glyph issue | Capture the UTF-8 code point; the generated font includes the complete precomposed Vietnamese alphabet |
-
-## Build evidence
-
-The production configuration was compiled locally with ESP-IDF 5.5.5 and `idf.py set-target esp32s3 && idf.py build`. With the expanded HLP/1 asset set, the application binary is `0x1557c0` bytes, leaving 56% of each 3 MB OTA slot available. The mock build is `0x10b960`. Display initialization, BLE discovery, MTU negotiation, HLP handshake, dynamic configuration, live `st` street data, and sustained state/heartbeat operation were exercised on the attached T-Display-S3 and Waze producer.
+- [Hướng dẫn flash firmware](FLASH_FIRMWARE_VI.md)
+- `dist/` — factory BIN, OTA BIN và checksum khi build/release cục bộ.
+- `assets/` ở thư mục cha project — ảnh nguồn và font dùng để sinh asset nhúng.

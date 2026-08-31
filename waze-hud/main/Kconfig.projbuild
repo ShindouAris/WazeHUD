@@ -4,9 +4,8 @@ config WAZE_HUD_MOCK_MODE
     bool "Enable renderer mock mode"
     default n
     help
-        Cycle deterministic renderer scenarios without requiring a phone.
-        Minimum speed remains mock-only; lane guidance also exercises the
-        real HLP/1 direction-mask representation.
+      Cycle deterministic renderer scenarios without requiring a phone.
+      Lane guidance exercises the real HLP/1 direction-mask representation.
 
 config WAZE_HUD_DEFAULT_BRIGHTNESS
     int "Default backlight brightness (percent)"
