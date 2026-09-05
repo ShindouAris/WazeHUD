@@ -51,7 +51,8 @@ HLP `dev.disp` tự khai báo `480×320` khi profile này được chọn.
 
 ## Backend phần cứng ES3C35P
 
-Profile sử dụng driver chính thức `espressif/esp_lcd_st77922` với QSPI 40 MHz:
+Profile sử dụng driver chính thức `espressif/esp_lcd_st77922`, chuỗi init riêng
+cho kính LCD của ES3C35P và QSPI 80 MHz:
 
 | Tín hiệu | GPIO |
 | --- | ---: |
@@ -65,6 +66,12 @@ Profile sử dụng driver chính thức `espressif/esp_lcd_st77922` với QSPI 
 | KEY/BOOT | 0 |
 | Battery ADC | 8 |
 
-LCD reset dùng chung với chân EN của ESP32-S3, vì vậy firmware dùng software reset của ST77922 sau khi MCU khởi động. Dirty-region X được căn theo bội số bốn pixel theo yêu cầu của ST77922 QSPI.
+LCD reset dùng chung với chân EN của ESP32-S3, vì vậy firmware dùng software reset
+của ST77922 sau khi MCU khởi động. Controller được giữ ở không gian native
+320×480 vì biến thể ST77922 này không hỗ trợ swap XY. Driver xoay từng stripe
+dirty-region sang native portrait trước khi truyền QSPI, nên UI vẫn hiển thị
+landscape 480×320 mà không cần framebuffer toàn màn hình. Dirty-region X được
+xoay theo stripe bốn dòng; ranh giới main/street cũng được căn bội số bốn để
+mọi biên X native đều thỏa yêu cầu alignment của ST77922 QSPI.
 
 Touch I²C chưa được firmware HUD sử dụng. Pin touch của module là SDA 38, SCL 39, RESET 48 và INT 47.

@@ -8,10 +8,10 @@ config WAZE_HUD_DISPLAY_TDISPLAY_S3
     bool "LILYGO T-Display S3 (320x170 landscape)"
 
 config WAZE_HUD_DISPLAY_35_480X320
-    bool "Generic 3.5-inch layout (480x320 landscape)"
+    bool "LCDWiki ES3C35P ST77922 (480x320 landscape)"
     help
-        Enables the 480x320 logical HUD layout and HLP display declaration.
-        The panel controller and pin mapping must be supplied by the target BSP.
+        Enables the ES3C35P-specific ST77922 QSPI initialization, software
+        landscape rotation, 480x320 HUD layout and matching HLP declaration.
 
 endchoice
 

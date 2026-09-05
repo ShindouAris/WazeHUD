@@ -20,7 +20,10 @@ constexpr int Width = 320;
 constexpr int Height = 213;
 constexpr int PhysicalWidth = 480;
 constexpr int PhysicalHeight = 320;
-constexpr int MainHeight = 175;
+// 173 logical rows scale to exactly 260 physical rows. This keeps the
+// main/street boundary four-pixel aligned after landscape pixels are rotated
+// into the ST77922 native 320x480 address space.
+constexpr int MainHeight = 173;
 constexpr int StreetHeight = Height - MainHeight;
 #else
 constexpr bool IsLargeDisplay = false;
@@ -36,8 +39,7 @@ constexpr int StreetHeight = Height - MainHeight;
 constexpr Rect Maneuver{0, 0, 85, MainHeight};
 constexpr Rect Speed{85, 0, 80, MainHeight};
 #if CONFIG_WAZE_HUD_DISPLAY_35_480X320
-// The ST77922 QSPI driver requires horizontal transfer boundaries aligned to
-// four physical pixels. These logical widths map to x={0,128,248,336,480}.
+// These logical widths map to landscape x={0,128,248,336,480}.
 constexpr Rect Limits{165, 0, 59, MainHeight};
 constexpr Rect Alerts{224, 0, 96, MainHeight};
 #else
@@ -89,7 +91,12 @@ static_assert(physicalRect(Maneuver).x % 4 == 0 &&
               (physicalRect(Limits).x + physicalRect(Limits).width) % 4 == 0 &&
               physicalRect(Alerts).x % 4 == 0 &&
               (physicalRect(Alerts).x + physicalRect(Alerts).width) % 4 == 0,
-              "ST77922 dirty-region X coordinates must be four-pixel aligned");
+              "Landscape dirty-region X coordinates must be four-pixel aligned");
+static_assert(physicalRect(Maneuver).y % 4 == 0 &&
+              (physicalRect(Maneuver).y + physicalRect(Maneuver).height) % 4 == 0 &&
+              physicalRect(Street).y % 4 == 0 &&
+              (physicalRect(Street).y + physicalRect(Street).height) % 4 == 0,
+              "Rotated ST77922 native X boundaries must be four-pixel aligned");
 #endif
 }  // namespace layout
 

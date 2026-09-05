@@ -22,6 +22,9 @@ private:
     void *panel_{nullptr};
     void *io_{nullptr};
     void *transferDone_{nullptr};
+    void *rotationBuffer_{nullptr};
+    bool mirrored_{false};
+    bool rotated180_{false};
 };
 
 }  // namespace waze_hud
