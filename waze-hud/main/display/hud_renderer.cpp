@@ -14,11 +14,15 @@ namespace {
 constexpr char kTag[] = "DISPLAY";
 
 constexpr int mainY(int value) {
-    return layout::IsLargeDisplay ? value * 5 / 4 : value;
+#if CONFIG_WAZE_HUD_DISPLAY_CYD_28
+    return value;
+#else
+    return value * layout::UiYScaleNumerator / layout::UiYScaleDenominator;
+#endif
 }
 
 constexpr int screenY(int value) {
-    return layout::IsLargeDisplay ? value * 5 / 4 : value;
+    return value * layout::UiYScaleNumerator / layout::UiYScaleDenominator;
 }
 
 uint16_t foreground(const DeviceSettings &settings) {
@@ -29,11 +33,9 @@ template <typename Left, typename Right>
 bool sameText(const Left &left, const Right &right) { return std::strcmp(left.data(), right.data()) == 0; }
 
 bool maneuverChanged(const HudState &a, const HudState &b) {
-    if (a.maneuver != b.maneuver || a.secondManeuver != b.secondManeuver ||
-        a.maneuverDistanceM != b.maneuverDistanceM || a.roundaboutExit != b.roundaboutExit ||
-        a.laneCount != b.laneCount || !sameText(a.eta, b.eta)) return true;
-    for (uint8_t i = 0; i < a.laneCount; ++i) if (!(a.lanes[i] == b.lanes[i])) return true;
-    return false;
+    return a.maneuver != b.maneuver || a.secondManeuver != b.secondManeuver ||
+           a.maneuverDistanceM != b.maneuverDistanceM ||
+           a.roundaboutExit != b.roundaboutExit;
 }
 
 bool isRoundaboutManeuver(Maneuver maneuver) {
@@ -51,6 +53,14 @@ bool alertsChanged(const HudState &a, const HudState &b) {
     return false;
 }
 
+bool guidanceChanged(const HudState &a, const HudState &b) {
+    if (!sameText(a.eta, b.eta) || a.laneCount != b.laneCount || alertsChanged(a, b))
+        return true;
+    for (uint8_t index = 0; index < a.laneCount; ++index)
+        if (!(a.lanes[index] == b.lanes[index])) return true;
+    return false;
+}
+
 bool hasSettingsChanged(const DeviceSettings &a, const DeviceSettings &b) {
     return a.brightness != b.brightness || a.theme != b.theme || a.showStreet != b.showStreet ||
            a.mirrorHud != b.mirrorHud || a.rotateDisplay != b.rotateDisplay ||
@@ -62,7 +72,7 @@ bool firmwareOverspeed(const HudState &state, const DeviceSettings &settings) {
     if (state.speedLimitKmh <= 0) return false;
     const int threshold = std::max(0, state.speedLimitKmh +
                                      static_cast<int>(settings.overspeedOffsetKmh));
-    return state.speedKmh >= threshold;
+    return state.speedKmh > threshold;
 }
 
 uint16_t alertDistanceColor(int distanceM, uint16_t normalColor) {
@@ -109,49 +119,63 @@ void arrowHead(Canvas &canvas, int x, int y, int dx, int dy, uint16_t color, int
     }
 }
 
-void laneArrowHead(Canvas &canvas, int x, int y, int dx, int dy, uint16_t color, int thickness) {
-    constexpr int size = 2;
-    if (std::abs(dx) >= std::abs(dy)) {
-        const int sign = dx >= 0 ? 1 : -1;
-        canvas.line(x,y,x-sign*size,y-size,color,thickness);
-        canvas.line(x,y,x-sign*size,y+size,color,thickness);
-    } else {
-        const int sign = dy >= 0 ? 1 : -1;
-        canvas.line(x,y,x-size,y-sign*size,color,thickness);
-        canvas.line(x,y,x+size,y-sign*size,color,thickness);
+void laneArrowHead(Canvas &canvas, int x, int y, int dx, int dy, uint16_t color) {
+    const assets::AlphaMask *head = &assets::kLaneArrowHeadUp;
+    if (dy > 0) {
+        head = dx < 0 ? &assets::kLaneArrowHeadDownLeft
+                      : dx > 0 ? &assets::kLaneArrowHeadDownRight
+                               : &assets::kLaneArrowHeadDown;
+    } else if (dy < 0) {
+        head = dx < 0 ? &assets::kLaneArrowHeadUpLeft
+                      : dx > 0 ? &assets::kLaneArrowHeadUpRight
+                               : &assets::kLaneArrowHeadUp;
+    } else if (dx < 0) {
+        head = &assets::kLaneArrowHeadLeft;
+    } else if (dx > 0) {
+        head = &assets::kLaneArrowHeadRight;
     }
+    canvas.alphaMask(x - static_cast<int>(head->width) / 2,
+                     y - static_cast<int>(head->height) / 2, *head, color);
 }
 
-void drawLane(Canvas &canvas, int x, int branchWidth, const LaneState &lane, uint16_t fg) {
-    const bool recommendedLane = lane.selectedMask != 0;
-    canvas.line(x,mainY(29),x,mainY(16),recommendedLane ? fg : colors::Muted,
-                recommendedLane ? 2 : 1);
+void drawGuidanceLane(Canvas &canvas, int x, int spacing, const LaneState &lane,
+                      uint16_t foregroundColor) {
+    constexpr int baseline = 40;
+    constexpr int junction = 29;
+    const bool selectedLane = lane.selectedMask != 0;
+    const uint16_t stemColor = selectedLane ? foregroundColor : colors::Muted;
+    const int stemThickness = selectedLane ? 3 : 2;
+    canvas.line(x, baseline, x, junction, stemColor, stemThickness);
+    if (selectedLane)
+        canvas.fillRect(x - spacing / 2 + 2, 47, std::max(2, spacing - 4), 2,
+                        colors::Green);
+
+    const int branchWidth = std::max(3, std::min(7, spacing / 2 - 2));
     for (int bit = 0; bit < 8; ++bit) {
         const uint8_t flag = static_cast<uint8_t>(1U << bit);
         if ((lane.directionMask & flag) == 0) continue;
-        const bool selected = (lane.selectedMask & flag) != 0;
-        const uint16_t color = selected ? fg : colors::Muted;
-        const int thickness = selected ? 2 : 1;
+        const bool selectedDirection = (lane.selectedMask & flag) != 0;
+        const uint16_t color = selectedDirection ? foregroundColor : colors::Muted;
+        const int thickness = selectedDirection ? 3 : 2;
         int endX = x;
-        int endY = mainY(5);
+        int endY = 15;
         switch (bit) {
-            case 1: endX = x - std::max(1, branchWidth / 2); endY = mainY(6); break;
-            case 2: endX = x - branchWidth; endY = mainY(9); break;
-            case 3: endX = x - branchWidth; endY = mainY(13); break;
-            case 4: endX = x + std::max(1, branchWidth / 2); endY = mainY(6); break;
-            case 5: endX = x + branchWidth; endY = mainY(9); break;
-            case 6: endX = x + branchWidth; endY = mainY(13); break;
+            case 1: endX = x - std::max(2, branchWidth / 2); endY = 16; break;
+            case 2: endX = x - branchWidth; endY = 19; break;
+            case 3: endX = x - branchWidth; endY = 23; break;
+            case 4: endX = x + std::max(2, branchWidth / 2); endY = 16; break;
+            case 5: endX = x + branchWidth; endY = 19; break;
+            case 6: endX = x + branchWidth; endY = 23; break;
             case 7:
                 endX = x - branchWidth;
-                endY = mainY(15);
-                canvas.line(x,mainY(16),endX,mainY(10),color,thickness);
-                canvas.line(endX,mainY(10),endX,mainY(15),color,thickness);
-                laneArrowHead(canvas,endX,mainY(15),0,1,color,thickness);
+                canvas.line(x, junction, endX, 22, color, thickness);
+                canvas.line(endX, 22, endX, 28, color, thickness);
+                laneArrowHead(canvas, endX, 28, 0, 1, color);
                 continue;
             default: break;
         }
-        canvas.line(x,mainY(16),endX,endY,color,thickness);
-        laneArrowHead(canvas,endX,endY,endX-x,endY-mainY(16),color,thickness);
+        canvas.line(x, junction, endX, endY, color, thickness);
+        laneArrowHead(canvas, endX, endY, endX - x, endY - junction, color);
     }
 }
 
@@ -452,6 +476,7 @@ void HudRenderer::render(const HudState &state, const DeviceSettings &settings,
             renderRegion(layout::Speed,state,settings,systemStatus);
             renderRegion(layout::Limits,state,settings,systemStatus);
             renderRegion(layout::Alerts,state,settings,systemStatus);
+            renderRegion(layout::Guidance,state,settings,systemStatus);
             renderRegion(layout::Street,state,settings,systemStatus);
         }
         previous_ = state;
@@ -467,6 +492,7 @@ void HudRenderer::render(const HudState &state, const DeviceSettings &settings,
         renderRegion(layout::Speed,state,settings,systemStatus);
         renderRegion(layout::Limits,state,settings,systemStatus);
         renderRegion(layout::Alerts,state,settings,systemStatus);
+        renderRegion(layout::Guidance,state,settings,systemStatus);
         renderRegion(layout::Street,state,settings,systemStatus);
         streetRendered = true;
     } else {
@@ -476,7 +502,10 @@ void HudRenderer::render(const HudState &state, const DeviceSettings &settings,
             renderRegion(layout::Speed,state,settings,systemStatus);
         if (state.speedLimitKmh != previous_.speedLimitKmh || state.hasMinimumSpeed != previous_.hasMinimumSpeed ||
             state.minimumSpeedKmh != previous_.minimumSpeedKmh) renderRegion(layout::Limits,state,settings,systemStatus);
-        if (alertsChanged(state, previous_)) renderRegion(layout::Alerts,state,settings,systemStatus);
+        const bool changedAlerts = alertsChanged(state, previous_);
+        if (changedAlerts) renderRegion(layout::Alerts,state,settings,systemStatus);
+        if (guidanceChanged(state, previous_))
+            renderRegion(layout::Guidance,state,settings,systemStatus);
         if (streetChanged ||
             settings.showStreet != previousSettings_.showStreet ||
             currentClockMinute != renderedClockMinute_ ||
@@ -512,6 +541,7 @@ void HudRenderer::renderRegion(const Rect &region, const HudState &state,
     else if (sameRegion(region, layout::Speed)) renderSpeed(canvas,state,settings);
     else if (sameRegion(region, layout::Limits)) renderLimits(canvas,state,settings);
     else if (sameRegion(region, layout::Alerts)) renderAlerts(canvas,state,settings);
+    else if (sameRegion(region, layout::Guidance)) renderGuidance(canvas,state,settings);
     else renderStreet(canvas,state,settings);
     if (!systemStatus.visible && state.connected && state.hasProducerState)
         renderMainIndicators(canvas, region, systemStatus);
@@ -682,22 +712,9 @@ void HudRenderer::renderStatus(Canvas &canvas, const Rect &region, const HudStat
 void HudRenderer::renderManeuver(Canvas &canvas, const HudState &state, const DeviceSettings &settings) {
     canvas.clear(colors::Panel);
     const uint16_t fg = foreground(settings);
-    if (state.laneCount > 0) {
-        const int spacing = std::max(6, 80 / static_cast<int>(state.laneCount));
-        const int totalWidth = spacing * static_cast<int>(state.laneCount);
-        const int firstX = (canvas.width() - totalWidth) / 2 + spacing / 2;
-        const int branchWidth = std::max(2, spacing / 2 - 1);
-        for (uint8_t i=0;i<state.laneCount;++i)
-            drawLane(canvas,firstX+i*spacing,branchWidth,state.lanes[i],fg);
-    }
     drawManeuverIcon(canvas,state.maneuver,state.roundaboutExit,fg);
     char distance[16]; formatDistance(state.maneuverDistanceM,distance,sizeof(distance));
     canvas.fontText(2,mainY(108),distance,assets::kTextSmall,fg,81,true);
-    if (state.eta[0] != 0) {
-        char eta[16];
-        std::snprintf(eta, sizeof(eta), "ETA %s", state.eta.data());
-        canvas.fontText(2,mainY(124),eta,assets::kTextSmall,colors::Muted,81,true);
-    }
 }
 
 void HudRenderer::renderSpeed(Canvas &canvas, const HudState &state, const DeviceSettings &settings) {
@@ -763,9 +780,6 @@ void HudRenderer::renderAlerts(Canvas &canvas, const HudState &state, const Devi
     }
 
     if (activeZone) {
-        // alr mirrors alrs[0] and is intentionally absent from the normalized
-        // upcoming array. While an active zone owns the dominant slot, restore
-        // that nearest-ahead alert as the single centered upcoming item.
         AlertState upcoming = state.nearestAlert;
         if (upcoming.kind == AlertKind::NoPassing) upcoming = {};
         for (uint8_t index = 0; upcoming.kind == AlertKind::None &&
@@ -781,27 +795,61 @@ void HudRenderer::renderAlerts(Canvas &canvas, const HudState &state, const Devi
         }
     } else {
         const uint8_t count = std::min<uint8_t>(2,state.upcomingAlertCount);
-        for (uint8_t i=0;i<count;++i) {
-            drawAlertIcon(canvas,20+i*48,mainY(105),13,state.upcomingAlerts[i],false);
-            char distance[12]; formatDistance(state.upcomingAlerts[i].distanceM,distance,sizeof(distance));
-            canvas.fontText(i*48,mainY(121),distance,assets::kTextSmall,
-                            alertDistanceColor(state.upcomingAlerts[i].distanceM, colors::Muted),47,true);
+        for (uint8_t index = 0; index < count; ++index) {
+            drawAlertIcon(canvas,20 + index * 48,mainY(105),13,
+                          state.upcomingAlerts[index],false);
+            char distance[12];
+            formatDistance(state.upcomingAlerts[index].distanceM,distance,sizeof(distance));
+            canvas.fontText(index * 48,mainY(121),distance,assets::kTextSmall,
+                            alertDistanceColor(state.upcomingAlerts[index].distanceM,
+                                               colors::Muted),47,true);
         }
     }
+
+}
+
+void HudRenderer::renderGuidance(Canvas &canvas, const HudState &state,
+                                 const DeviceSettings &settings) {
+    canvas.clear(colors::Panel);
+    const uint16_t fg = foreground(settings);
+    constexpr int etaWidth = 65;
+    constexpr int laneLeft = etaWidth;
+    constexpr int laneRight = layout::Width;
+
+    canvas.fillRect(0, 0, layout::Width, 1, colors::Muted);
+    canvas.fillRect(etaWidth - 1, 4, 1, layout::GuidanceHeight - 8, colors::Muted);
+
+    if (state.eta[0] != 0) {
+        canvas.fontText(0, 2, "ETA", assets::kTextSmall, colors::Muted, etaWidth - 2, true);
+        canvas.fontText(0, 21, state.eta.data(), assets::kTextMedium, fg, etaWidth - 2, true);
+    }
+
+    const uint8_t laneCount = std::min<uint8_t>(state.laneCount, 10);
+    if (laneCount > 0) {
+        const int available = laneRight - laneLeft - 6;
+        const int spacing = std::min(24, available / static_cast<int>(laneCount));
+        const int totalWidth = spacing * static_cast<int>(laneCount);
+        const int firstX = laneLeft + (available - totalWidth) / 2 + spacing / 2 + 3;
+        for (uint8_t index = 0; index < laneCount; ++index)
+            drawGuidanceLane(canvas, firstX + index * spacing, spacing,
+                             state.lanes[index], fg);
+    }
+
 }
 
 void HudRenderer::renderStreet(Canvas &canvas, const HudState &state, const DeviceSettings &settings) {
     canvas.clear(colors::Panel);
+    const int textY = std::max(0, (layout::StreetHeight - assets::kTextMedium.lineHeight) / 2);
     const int64_t millis = localClockMillis(state);
     const int64_t second = millis == INT64_MIN ? INT64_MIN : millis / 1000LL;
     const bool haveClock = second != INT64_MIN;
     if (settings.showStreet) {
         const char *street = displayStreet(state);
         if (marqueeActive_)
-            canvas.fontText(5-marqueeOffset_,0,street,assets::kTextMedium,
+            canvas.fontText(5-marqueeOffset_,textY,street,assets::kTextMedium,
                             foreground(settings),-1,false);
         else
-            canvas.fontText(5,0,street,assets::kTextMedium,foreground(settings),
+            canvas.fontText(5,textY,street,assets::kTextMedium,foreground(settings),
                             haveClock ? 248 : 310,true);
     }
     if (haveClock) {
@@ -813,7 +861,7 @@ void HudRenderer::renderStreet(Canvas &canvas, const HudState &state, const Devi
         char clock[8];
         std::snprintf(clock,sizeof(clock),"%02d%c%02d",
                       normalizedMinute / 60,separator,normalizedMinute % 60);
-        canvas.fontText(260,0,clock,assets::kTextMedium,colors::Muted,55,true);
+        canvas.fontText(260,textY,clock,assets::kTextMedium,colors::Muted,55,true);
     }
 }
 

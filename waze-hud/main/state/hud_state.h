@@ -8,7 +8,7 @@ namespace waze_hud {
 
 constexpr std::size_t kMaxStreetUtf8Bytes = 160;
 constexpr std::size_t kMaxAlerts = 4;
-constexpr std::size_t kMaxLanes = 12;
+constexpr std::size_t kMaxLanes = 10;
 
 enum class Maneuver : uint8_t {
     None = 0,

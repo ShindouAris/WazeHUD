@@ -8,8 +8,12 @@
 #include "esp_lcd_panel_io.h"
 #include "esp_lcd_panel_ops.h"
 #include "esp_lcd_panel_vendor.h"
+#include "esp_timer.h"
 #if CONFIG_WAZE_HUD_DISPLAY_35_480X320
 #include "esp_lcd_st77922.h"
+#elif CONFIG_WAZE_HUD_DISPLAY_CYD_28
+#include "esp_lcd_ili9341.h"
+#include "esp_lcd_ili9341_init_cmds_1.h"
 #endif
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -31,10 +35,22 @@ constexpr gpio_num_t kData3 = GPIO_NUM_9;
 constexpr spi_host_device_t kLcdHost = SPI2_HOST;
 constexpr int kNativeWidth = 320;
 constexpr int kNativeHeight = 480;
-constexpr int kTransferRows = 4;
 static_assert(layout::PhysicalWidth == kNativeHeight &&
               layout::PhysicalHeight == kNativeWidth,
               "ES3C35P landscape surface must match the rotated native panel");
+#elif CONFIG_WAZE_HUD_DISPLAY_CYD_28
+constexpr gpio_num_t kBacklight = GPIO_NUM_21;
+constexpr gpio_num_t kCs = GPIO_NUM_15;
+constexpr gpio_num_t kDc = GPIO_NUM_2;
+constexpr gpio_num_t kClock = GPIO_NUM_14;
+constexpr gpio_num_t kMosi = GPIO_NUM_13;
+constexpr gpio_num_t kMiso = GPIO_NUM_12;
+constexpr spi_host_device_t kLcdHost = SPI2_HOST;
+constexpr int kNativeWidth = 240;
+constexpr int kNativeHeight = 320;
+static_assert(layout::PhysicalWidth == kNativeHeight &&
+              layout::PhysicalHeight == kNativeWidth,
+              "CYD landscape surface must match the rotated native panel");
 #else
 constexpr gpio_num_t kPower = GPIO_NUM_15;
 constexpr gpio_num_t kBacklight = GPIO_NUM_38;
@@ -44,6 +60,14 @@ constexpr gpio_num_t kDc = GPIO_NUM_7;
 constexpr gpio_num_t kWr = GPIO_NUM_8;
 constexpr gpio_num_t kRd = GPIO_NUM_9;
 constexpr int kDataPins[8] = {39, 40, 41, 42, 45, 46, 47, 48};
+#endif
+#if CONFIG_WAZE_HUD_DISPLAY_CYD_28
+// SPI submission/wakeup overhead dominates tiny transfers on the classic
+// ESP32. Twenty rows keep the DMA buffer modest (12.8 KiB) while reducing a
+// full-screen pass from 60 synchronous transactions to 12.
+constexpr int kTransferRows = 20;
+#else
+constexpr int kTransferRows = 4;
 #endif
 
 struct InitCommand {
@@ -149,7 +173,7 @@ bool onTransferDone(esp_lcd_panel_io_handle_t, esp_lcd_panel_io_event_data_t *, 
     return wake == pdTRUE;
 }
 
-#if !CONFIG_WAZE_HUD_DISPLAY_35_480X320
+#if !CONFIG_WAZE_HUD_DISPLAY_35_480X320 && !CONFIG_WAZE_HUD_DISPLAY_CYD_28
 esp_err_t configureOutput(gpio_num_t pin, int level) {
     gpio_config_t config{};
     config.pin_bit_mask = 1ULL << static_cast<unsigned>(pin);
@@ -169,6 +193,8 @@ DisplayDriver &DisplayDriver::instance() {
 esp_err_t DisplayDriver::init() {
 #if CONFIG_WAZE_HUD_DISPLAY_35_480X320
     ESP_LOGI(kTag, "Initializing ES3C35P ST77922 QSPI panel at 480x320 landscape");
+#elif CONFIG_WAZE_HUD_DISPLAY_CYD_28
+    ESP_LOGI(kTag, "Initializing ESP32-2432S028 ILI9341 SPI panel at 320x240 landscape");
 #else
     ESP_LOGI(kTag, "Initializing T-Display-S3 ST7789V i80 panel");
     ESP_RETURN_ON_ERROR(configureOutput(kPower, 1), kTag, "Peripheral power enable failed");
@@ -249,6 +275,61 @@ esp_err_t DisplayDriver::init() {
         MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
     ESP_RETURN_ON_FALSE(rotationBuffer_ != nullptr, ESP_ERR_NO_MEM, kTag,
                         "ST77922 rotation stripe allocation failed");
+#elif CONFIG_WAZE_HUD_DISPLAY_CYD_28
+    spi_bus_config_t bus{};
+    bus.mosi_io_num = kMosi;
+    bus.miso_io_num = kMiso;
+    bus.sclk_io_num = kClock;
+    bus.quadwp_io_num = -1;
+    bus.quadhd_io_num = -1;
+    bus.max_transfer_sz = layout::PhysicalWidth * kTransferRows *
+                          static_cast<int>(sizeof(uint16_t));
+    ESP_RETURN_ON_ERROR(spi_bus_initialize(kLcdHost, &bus, SPI_DMA_CH_AUTO),
+                        kTag, "ILI9341 SPI bus initialization failed");
+
+    esp_lcd_panel_io_spi_config_t ioConfig{};
+    ioConfig.cs_gpio_num = kCs;
+    ioConfig.dc_gpio_num = kDc;
+    ioConfig.spi_mode = 0;
+    ioConfig.pclk_hz = 40 * 1000 * 1000;
+    ioConfig.on_color_trans_done = onTransferDone;
+    ioConfig.user_ctx = semaphore;
+    ioConfig.lcd_cmd_bits = 8;
+    ioConfig.lcd_param_bits = 8;
+    ioConfig.trans_queue_depth = 1;
+    esp_lcd_panel_io_handle_t io = nullptr;
+    ESP_RETURN_ON_ERROR(
+        esp_lcd_new_panel_io_spi(static_cast<esp_lcd_spi_bus_handle_t>(kLcdHost),
+                                 &ioConfig, &io),
+        kTag, "ILI9341 panel IO creation failed");
+    io_ = io;
+
+    ili9341_vendor_config_t vendorConfig{};
+    vendorConfig.init_cmds = ili9341_lcd_init_vendor;
+    vendorConfig.init_cmds_size =
+        sizeof(ili9341_lcd_init_vendor) / sizeof(ili9341_lcd_init_cmd_t);
+    esp_lcd_panel_dev_config_t panelConfig{};
+    // TFT reset is tied to the ESP32 EN signal on the resistive CYD revision.
+    panelConfig.reset_gpio_num = -1;
+    panelConfig.rgb_ele_order = LCD_RGB_ELEMENT_ORDER_BGR;
+    panelConfig.bits_per_pixel = 16;
+    panelConfig.vendor_config = &vendorConfig;
+    esp_lcd_panel_handle_t panel = nullptr;
+    ESP_RETURN_ON_ERROR(esp_lcd_new_panel_ili9341(io, &panelConfig, &panel),
+                        kTag, "ILI9341 driver creation failed");
+    panel_ = panel;
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_reset(panel), kTag, "ILI9341 software reset failed");
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_init(panel), kTag, "ILI9341 initialization failed");
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_invert_color(panel, true), kTag,
+                        "ILI9341 inversion setup failed");
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_disp_on_off(panel, true), kTag,
+                        "ILI9341 display enable failed");
+
+    rotationBuffer_ = heap_caps_malloc(
+        layout::PhysicalWidth * kTransferRows * sizeof(uint16_t),
+        MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+    ESP_RETURN_ON_FALSE(rotationBuffer_ != nullptr, ESP_ERR_NO_MEM, kTag,
+                        "ILI9341 rotation stripe allocation failed");
 #else
     esp_lcd_i80_bus_config_t bus{};
     bus.dc_gpio_num = kDc;
@@ -324,6 +405,7 @@ esp_err_t DisplayDriver::init() {
         layout::PhysicalWidth * kTransferRows * sizeof(uint16_t), MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL));
     ESP_RETURN_ON_FALSE(clearBuffer != nullptr, ESP_ERR_NO_MEM, kTag, "Startup clear buffer allocation failed");
     std::fill(clearBuffer, clearBuffer + layout::PhysicalWidth * kTransferRows, static_cast<uint16_t>(0x0000));
+    const int64_t clearStartedUs = esp_timer_get_time();
     for (int y = 0; y < layout::PhysicalHeight; y += kTransferRows) {
         const Rect stripe{0, static_cast<int16_t>(y), layout::PhysicalWidth,
                           static_cast<int16_t>(std::min(kTransferRows, layout::PhysicalHeight - y))};
@@ -335,7 +417,8 @@ esp_err_t DisplayDriver::init() {
         }
     }
     heap_caps_free(clearBuffer);
-    ESP_LOGI(kTag, "Startup LCD clear completed");
+    ESP_LOGI(kTag, "Startup LCD clear completed in %lld ms",
+             static_cast<long long>((esp_timer_get_time() - clearStartedUs) / 1000));
     ESP_LOGI(kTag, "Display ready at %dx%d landscape",
              layout::PhysicalWidth, layout::PhysicalHeight);
     return ESP_OK;
@@ -349,15 +432,15 @@ esp_err_t DisplayDriver::drawRegion(const Rect &region, uint16_t *pixels) {
                         region.y + region.height <= layout::PhysicalHeight,
                         ESP_ERR_INVALID_ARG, kTag, "Invalid dirty region");
     auto panel = static_cast<esp_lcd_panel_handle_t>(panel_);
-    // The S3 i80/GDMA path is most reliable with short descriptors. Keep the
-    // renderer's dirty regions, but transmit them as bounded row stripes.
+    // Keep transfers in short descriptors. Rotated panels also use each row
+    // stripe as a bounded software-transpose unit.
     for (int row = 0; row < region.height; row += kTransferRows) {
         const int rows = std::min(kTransferRows, region.height - row);
         uint16_t *stripe = pixels + row * region.width;
-#if CONFIG_WAZE_HUD_DISPLAY_35_480X320
+#if CONFIG_WAZE_HUD_DISPLAY_35_480X320 || CONFIG_WAZE_HUD_DISPLAY_CYD_28
         auto *rotated = static_cast<uint16_t *>(rotationBuffer_);
         ESP_RETURN_ON_FALSE(rotated != nullptr, ESP_ERR_INVALID_STATE, kTag,
-                            "ST77922 rotation buffer unavailable");
+                            "LCD rotation buffer unavailable");
 
         // Compose the user-facing landscape transforms first, then rotate the
         // result clockwise into the ST77922 native 320x480 address space.
@@ -369,7 +452,11 @@ esp_err_t DisplayDriver::drawRegion(const Rect &region, uint16_t *pixels) {
                 transformedY = layout::PhysicalHeight - 1 - transformedY;
             }
             if (mirrored_) transformedX = layout::PhysicalWidth - 1 - transformedX;
+#if CONFIG_WAZE_HUD_DISPLAY_35_480X320
             nativeX = kNativeWidth - 1 - transformedY;
+#else
+            nativeX = transformedY;
+#endif
             nativeY = transformedX;
         };
 
@@ -436,9 +523,9 @@ esp_err_t DisplayDriver::setOrientation(bool mirrored, bool rotated180) {
     // mounting orientation; native Y is the logical horizontal mirror used
     // for windshield projection. Compose both transforms rather than letting
     // one setting overwrite the other.
-#if CONFIG_WAZE_HUD_DISPLAY_35_480X320
-    // ST77922 on ES3C35P does not support axis swapping via MADCTL. Store the
-    // landscape transforms for the software rotation in drawRegion().
+#if CONFIG_WAZE_HUD_DISPLAY_35_480X320 || CONFIG_WAZE_HUD_DISPLAY_CYD_28
+    // Both portrait-native panels use the deterministic software rotation in
+    // drawRegion(), so compose HUD mirror/rotation there as well.
     mirrored_ = mirrored;
     rotated180_ = rotated180;
     return ESP_OK;

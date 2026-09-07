@@ -1,19 +1,12 @@
 menu "Waze HUD firmware"
 
-choice WAZE_HUD_DISPLAY_PROFILE
-    prompt "Display profile"
-    default WAZE_HUD_DISPLAY_TDISPLAY_S3
-
-config WAZE_HUD_DISPLAY_TDISPLAY_S3
-    bool "LILYGO T-Display S3 (320x170 landscape)"
-
-config WAZE_HUD_DISPLAY_35_480X320
-    bool "LCDWiki ES3C35P ST77922 (480x320 landscape)"
+config WAZE_HUD_DISPLAY_CYD_28
+    bool
+    default y
     help
-        Enables the ES3C35P-specific ST77922 QSPI initialization, software
-        landscape rotation, 480x320 HUD layout and matching HLP declaration.
-
-endchoice
+        This branch is dedicated to the classic ESP32 Cheap Yellow Display.
+        It uses the ILI9341 SPI pin map, software landscape rotation and
+        320x240 output.
 
 config WAZE_HUD_MOCK_MODE
     bool "Enable renderer mock mode"

@@ -30,6 +30,7 @@ private:
     void renderSpeed(Canvas &canvas, const HudState &state, const DeviceSettings &settings);
     void renderLimits(Canvas &canvas, const HudState &state, const DeviceSettings &settings);
     void renderAlerts(Canvas &canvas, const HudState &state, const DeviceSettings &settings);
+    void renderGuidance(Canvas &canvas, const HudState &state, const DeviceSettings &settings);
     void renderStreet(Canvas &canvas, const HudState &state, const DeviceSettings &settings);
 
     uint16_t *buffer_{nullptr};

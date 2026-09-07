@@ -182,6 +182,25 @@ esp_err_t DeviceConfig::toggleRotation() {
     return ESP_OK;
 }
 
+esp_err_t DeviceConfig::toggleMirror() {
+    DeviceSettings candidate = snapshot();
+    candidate.mirrorHud = !candidate.mirrorHud;
+    ++candidate.revision;
+    const esp_err_t saved = saveSettings(candidate);
+    if (saved != ESP_OK) {
+        ESP_LOGE(kTag, "Button mirror save failed: %s", esp_err_to_name(saved));
+        return saved;
+    }
+    taskENTER_CRITICAL(&lock_);
+    active_ = candidate;
+    taskEXIT_CRITICAL(&lock_);
+    ESP_LOGI(kTag, "HUD mirror changed to %s, revision %lu",
+             candidate.mirrorHud ? "on" : "off",
+             static_cast<unsigned long>(candidate.revision));
+    HudStateStore::instance().refresh();
+    return ESP_OK;
+}
+
 void DeviceConfig::publishSchema(HlpSendLine send, void *context) {
     const DeviceSettings settings = snapshot();
     cJSON *root = envelope("cfg_begin");

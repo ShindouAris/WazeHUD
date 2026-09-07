@@ -30,6 +30,7 @@ public:
     esp_err_t init();
     DeviceSettings snapshot() const;
     esp_err_t toggleRotation();
+    esp_err_t toggleMirror();
     bool handleMessage(const cJSON *root, HlpSendLine send, void *context);
     void publishSchema(HlpSendLine send, void *context);
 

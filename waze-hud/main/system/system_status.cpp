@@ -14,6 +14,9 @@
 namespace waze_hud {
 namespace {
 constexpr char kTag[] = "SYSTEM";
+portMUX_TYPE statusLock = portMUX_INITIALIZER_UNLOCKED;
+SystemStatusSnapshot current{};
+#if !CONFIG_WAZE_HUD_DISPLAY_CYD_28
 constexpr adc_unit_t kBatteryAdcUnit = ADC_UNIT_1;
 #if CONFIG_WAZE_HUD_DISPLAY_35_480X320
 constexpr adc_channel_t kBatteryAdcChannel = ADC_CHANNEL_7;  // GPIO8 on ES3C35P.
@@ -28,8 +31,6 @@ constexpr int kDividerRatio = 2;
 
 adc_oneshot_unit_handle_t adcHandle = nullptr;
 adc_cali_handle_t calibrationHandle = nullptr;
-portMUX_TYPE statusLock = portMUX_INITIALIZER_UNLOCKED;
-SystemStatusSnapshot current{};
 
 struct VoltagePoint {
     uint16_t millivolts;
@@ -56,8 +57,14 @@ uint8_t voltageToPercent(uint16_t millivolts) {
     }
     return 100;
 }
+#endif
 
 bool sampleBattery(uint16_t &batteryMillivolts, uint8_t &batteryPercent) {
+#if CONFIG_WAZE_HUD_DISPLAY_CYD_28
+    (void)batteryMillivolts;
+    (void)batteryPercent;
+    return false;
+#else
     if (!adcHandle) return false;
     int64_t sumMillivolts = 0;
     unsigned validSamples = 0;
@@ -86,6 +93,7 @@ bool sampleBattery(uint16_t &batteryMillivolts, uint8_t &batteryPercent) {
     batteryMillivolts = static_cast<uint16_t>(measured);
     batteryPercent = voltageToPercent(batteryMillivolts);
     return true;
+#endif
 }
 }  // namespace
 
@@ -95,6 +103,10 @@ SystemStatus &SystemStatus::instance() {
 }
 
 esp_err_t SystemStatus::init() {
+#if CONFIG_WAZE_HUD_DISPLAY_CYD_28
+    ESP_LOGI(kTag, "Battery status disabled: CYD has no battery-voltage sense input");
+    return ESP_ERR_NOT_SUPPORTED;
+#else
     adc_oneshot_unit_init_cfg_t unitConfig{};
     unitConfig.unit_id = kBatteryAdcUnit;
     unitConfig.ulp_mode = ADC_ULP_MODE_DISABLE;
@@ -127,6 +139,7 @@ esp_err_t SystemStatus::init() {
     }
     ESP_LOGI(kTag, "Battery ADC ready on GPIO%d (2:1 divider)", kBatteryGpio);
     return ESP_OK;
+#endif
 }
 
 bool SystemStatus::refresh() {

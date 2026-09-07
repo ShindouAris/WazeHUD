@@ -7,6 +7,7 @@
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_system.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "nvs_flash.h"
@@ -15,6 +16,7 @@
 #include "sdkconfig.h"
 #include "state/hud_state_store.h"
 #include "system/system_status.h"
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 
@@ -22,12 +24,74 @@ namespace waze_hud {
 namespace {
 constexpr char kTag[] = "APP";
 uint32_t bootSequence = 0;
-#if CONFIG_WAZE_HUD_DISPLAY_35_480X320
+#if CONFIG_WAZE_HUD_DISPLAY_35_480X320 || CONFIG_WAZE_HUD_DISPLAY_CYD_28
 constexpr gpio_num_t kOrientationButton = GPIO_NUM_0;
 #else
 constexpr gpio_num_t kOrientationButton = GPIO_NUM_14;
 #endif
 constexpr TickType_t kLongPressTicks = pdMS_TO_TICKS(1200);
+constexpr TickType_t kDoublePressTicks = pdMS_TO_TICKS(350);
+
+#if CONFIG_WAZE_HUD_DISPLAY_CYD_28
+constexpr gpio_num_t kLedRed = GPIO_NUM_4;
+constexpr gpio_num_t kLedGreen = GPIO_NUM_16;
+constexpr gpio_num_t kLedBlue = GPIO_NUM_17;
+constexpr TickType_t kOverspeedBlinkTicks = pdMS_TO_TICKS(250);
+
+void setRgbLed(bool red, bool green, bool blue) {
+    // The CYD RGB LED is common-anode/active-low.
+    gpio_set_level(kLedRed, red ? 0 : 1);
+    gpio_set_level(kLedGreen, green ? 0 : 1);
+    gpio_set_level(kLedBlue, blue ? 0 : 1);
+}
+
+void overspeedLedTask(void *) {
+    bool illuminated = false;
+    uint8_t disconnectedPhase = 0;
+    constexpr bool palette[][3] = {
+        {true, false, false}, {true, true, false}, {false, true, false},
+        {false, true, true}, {false, false, true}, {true, false, true},
+    };
+    for (;;) {
+        const HudState state = HudStateStore::instance().snapshot();
+        const DeviceSettings settings = DeviceConfig::instance().snapshot();
+        const int threshold = std::max(0, state.speedLimitKmh +
+                                           static_cast<int>(settings.overspeedOffsetKmh));
+        const bool overspeed = state.connected && state.hasProducerState &&
+                               state.navigationActive && !state.signalStale &&
+                               state.speedLimitKmh > 0 && state.speedKmh > threshold;
+        if (!state.connected) {
+            const bool *color = palette[disconnectedPhase % 6];
+            setRgbLed(color[0], color[1], color[2]);
+            ++disconnectedPhase;
+            illuminated = false;
+        } else if (!state.hasProducerState || state.signalStale) {
+            setRgbLed(false, false, true);
+            illuminated = false;
+        } else if (overspeed) {
+            illuminated = !illuminated;
+            setRgbLed(illuminated, false, false);
+        } else {
+            setRgbLed(false, true, false);
+            illuminated = false;
+        }
+        vTaskDelay(kOverspeedBlinkTicks);
+    }
+}
+
+esp_err_t startOverspeedLed() {
+    gpio_config_t config{};
+    config.pin_bit_mask = (1ULL << static_cast<unsigned>(kLedRed)) |
+                          (1ULL << static_cast<unsigned>(kLedGreen)) |
+                          (1ULL << static_cast<unsigned>(kLedBlue));
+    config.mode = GPIO_MODE_OUTPUT;
+    ESP_RETURN_ON_ERROR(gpio_config(&config), kTag, "RGB LED setup failed");
+    setRgbLed(false, false, false);
+    const BaseType_t created = xTaskCreate(overspeedLedTask, "overspeed_led", 2048,
+                                           nullptr, 2, nullptr);
+    return created == pdPASS ? ESP_OK : ESP_ERR_NO_MEM;
+}
+#endif
 
 void recordBootReason() {
     nvs_handle_t nvs;
@@ -86,9 +150,30 @@ void orientationButtonTask(void *) {
                     SystemStatus::instance().hide();
                     HudStateStore::instance().refresh();
                 } else {
-                    const esp_err_t result = DeviceConfig::instance().toggleRotation();
-                    if (result != ESP_OK)
-                        ESP_LOGE(kTag, "Orientation button update failed: %s", esp_err_to_name(result));
+                    bool doublePressed = false;
+                    const TickType_t releasedAt = xTaskGetTickCount();
+                    while (xTaskGetTickCount() - releasedAt < kDoublePressTicks) {
+                        if (gpio_get_level(kOrientationButton) == 0) {
+                            vTaskDelay(pdMS_TO_TICKS(40));
+                            if (gpio_get_level(kOrientationButton) == 0) {
+                                while (gpio_get_level(kOrientationButton) == 0)
+                                    vTaskDelay(pdMS_TO_TICKS(20));
+                                const esp_err_t result = DeviceConfig::instance().toggleMirror();
+                                if (result != ESP_OK)
+                                    ESP_LOGE(kTag, "Mirror button update failed: %s",
+                                             esp_err_to_name(result));
+                                doublePressed = true;
+                                break;
+                            }
+                        }
+                        vTaskDelay(pdMS_TO_TICKS(10));
+                    }
+                    if (!doublePressed) {
+                        const esp_err_t result = DeviceConfig::instance().toggleRotation();
+                        if (result != ESP_OK)
+                            ESP_LOGE(kTag, "Orientation button update failed: %s",
+                                     esp_err_to_name(result));
+                    }
                 }
             }
         }
@@ -132,8 +217,10 @@ void uiTask(void *) {
         return;
     }
     HudState state = HudStateStore::instance().snapshot();
+    const int64_t renderStartedUs = esp_timer_get_time();
     renderer.render(state, DeviceConfig::instance().snapshot(), SystemStatus::instance().snapshot());
-    ESP_LOGI(kTag, "Initial UI frame rendered");
+    ESP_LOGI(kTag, "Initial UI frame rendered in %lld ms",
+             static_cast<long long>((esp_timer_get_time() - renderStartedUs) / 1000));
     for (;;) {
         const TickType_t timeout = renderer.animationActive() ? pdMS_TO_TICKS(80) : portMAX_DELAY;
         if (HudStateStore::instance().receive(state, timeout))
@@ -175,7 +262,7 @@ HudState baseMock() {
 void mockTask(void *) {
     ESP_LOGW(kTag, "Renderer mock mode enabled; BLE/HLP input is disabled");
     vTaskDelay(pdMS_TO_TICKS(1200));
-    constexpr uint32_t kScenarioCount = 11;
+    constexpr uint32_t kScenarioCount = 12;
     uint32_t scenario = 0;
     for (;;) {
         HudState state = baseMock();
@@ -221,6 +308,16 @@ void mockTask(void *) {
                 state.upcomingAlerts[0] = {AlertKind::TrafficJam, 1350, 0, 2, 5};
                 state.upcomingAlertCount = 1;
                 break;
+            case 11:
+                state.laneCount = 10;
+                for (uint8_t index = 0; index < state.laneCount; ++index) {
+                    state.lanes[index].directionMask = index < 3 ? 0x04 : index > 5 ? 0x20 : 0x01;
+                    state.lanes[index].selectedMask = index >= 3 && index <= 5 ? 0x01 : 0x00;
+                }
+                state.upcomingAlerts[0] = {AlertKind::Police, 650, 0};
+                state.upcomingAlerts[1] = {AlertKind::Hazard, 1200, 0};
+                state.upcomingAlertCount = 2;
+                break;
         }
         HudStateStore::instance().publish(state);
         ESP_LOGI(kTag, "Mock renderer scenario %lu",
@@ -259,6 +356,9 @@ extern "C" void app_main() {
 #endif
 
     ESP_ERROR_CHECK(startOrientationButton());
+#if CONFIG_WAZE_HUD_DISPLAY_CYD_28
+    ESP_ERROR_CHECK(startOverspeedLed());
+#endif
     ESP_ERROR_CHECK(xTaskCreate(systemStatusTask, "hud_status", 3072, nullptr, 3, nullptr) == pdPASS
                         ? ESP_OK : ESP_ERR_NO_MEM);
 

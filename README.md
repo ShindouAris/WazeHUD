@@ -1,21 +1,21 @@
-# Waze HUD for LILYGO T-Display-S3
+# Waze HUD firmware
 
-Native ESP-IDF firmware that receives normative HLP/1 navigation snapshots over BLE and renders a low-latency 320×170 automotive HUD on the LILYGO T-Display-S3.
+Native ESP-IDF firmware that receives normative HLP/1 navigation snapshots over BLE and renders a low-latency automotive HUD on ESP32-2432S028 (CYD 2.8-inch).
 
-> This target is the 1.9-inch ST7789V T-Display-S3, not the similarly named AMOLED or S3 Pro boards. The pin map and panel sequence are intentionally board-specific. Physical display orientation, color order, BLE interoperability, and long-duration thermal/power behavior still require validation on the target board.
+> This branch targets the ESP32-WROOM-32 board marked `ESP32-2432S028`. Some vendor documents append `R` for the resistive-touch SKU; WazeHUD does not use touch. It does not target similarly named ESP32-S3 variants.
 
 ## Build and flash
 
 Prerequisites:
 
 - ESP-IDF 5.5.5
-- A non-AMOLED LILYGO T-Display-S3
-- A data-capable USB-C cable
+- An ESP32-2432S028 CYD 2.8-inch with the ILI9341-compatible pin map
+- A data-capable USB cable
 
 From an activated ESP-IDF shell:
 
 ```bash
-idf.py set-target esp32s3
+idf.py set-target esp32
 idf.py build
 idf.py -p PORT flash monitor
 ```
@@ -25,11 +25,19 @@ On this Windows workstation, activate the installed environment first:
 ```powershell
 . 'C:\Espressif\tools\Microsoft.v5.5.5.PowerShell_profile.ps1'
 cd D:\Code\WazeHUD\waze-hud
-idf.py set-target esp32s3
+idf.py set-target esp32
 idf.py build
 ```
 
-The normal build advertises `WazeHUD` and waits for the Waze Mod HUD Link picker to connect. Do not use Bluetooth virtual COM ports for flashing; an attached ESP32-S3 should appear as a USB serial/JTAG device.
+The normal build advertises `WazeHUD` and waits for the Waze Mod HUD Link picker to connect. Flash through the CYD's USB-to-UART COM port, not a Bluetooth virtual COM port.
+
+### Build for ESP32-2432S028 / CYD 2.8-inch
+
+This branch is dedicated to CYD. Its default sdkconfig targets the classic
+ESP32 with 4 MB flash and no PSRAM, so the commands above are sufficient.
+
+For renderer-only hardware testing, use the existing `sdkconfig.mock.defaults`
+overlay in a separate build directory.
 
 ## Run the renderer without a phone
 
@@ -41,7 +49,7 @@ For a separate command-line mock build without changing the production `sdkconfi
 idf.py -B build-mock `
   -D SDKCONFIG=./sdkconfig.mock `
   -D "SDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.mock.defaults" `
-  set-target esp32s3
+  set-target esp32
 idf.py -B build-mock -D SDKCONFIG=./sdkconfig.mock build
 ```
 
@@ -58,7 +66,7 @@ flowchart LR
     decoder -->|fixed snapshot| state[HUD state store]
     state -->|length-one queue| ui[UI task]
     config[NVS device config] --> ui
-    ui -->|dirty RGB565 regions| lcd[ST7789V i80 LCD]
+    ui -->|dirty RGB565 regions| lcd[Board-specific LCD driver]
     protocol -->|dev / pong / cfg_ack| ble
 ```
 
@@ -71,8 +79,8 @@ The callback-to-display path has these boundaries:
 | Protocol | Envelope validation, immediate ping/pong, handshake and configuration routing | One long-lived task |
 | Decoder | Default semantics, enum normalization, `(sess, ts)` ordering | Temporary cJSON DOM deleted per frame |
 | State store | Thread-safe immutable snapshot publication | Fixed-capacity strings and arrays |
-| Renderer | Dirty regions, embedded Waze assets, antialiased Vietnamese/font-number rendering | One 26.6 KB internal DMA buffer |
-| Display | ST7789V i80 transfer, landscape transform, PWM backlight | One transfer in flight |
+| Renderer | Dirty regions, embedded Waze assets, antialiased Vietnamese/font-number rendering | One profile-sized internal DMA buffer |
+| Display | Board-specific i80/SPI transfer, landscape transform, PWM backlight | One transfer in flight |
 | Configuration | Staged full-form validation and NVS commit before ACK | One bounded transaction |
 
 BLE callbacks only copy bytes or lifecycle events. JSON parsing, configuration storage, and LCD transfers run in separate task contexts.
@@ -103,17 +111,20 @@ For speed values present in `assets/speedLimit`, the renderer uses the generated
 
 ## Hardware binding
 
-The driver follows LILYGO's official T-Display-S3 definitions and ESP-IDF example:
+The driver follows the ESP32-2432S028 schematic and working ESP-IDF examples:
 
 | Signal | GPIO |
 |---|---:|
-| Peripheral power | 15 |
-| Backlight PWM | 38 |
-| LCD reset | 5 |
-| LCD CS / DC / WR / RD | 6 / 7 / 8 / 9 |
-| LCD D0–D7 | 39 / 40 / 41 / 42 / 45 / 46 / 47 / 48 |
+| LCD MOSI / MISO / SCLK | 13 / 12 / 14 |
+| LCD CS / DC | 15 / 2 |
+| LCD reset | Tied to EN |
+| Backlight PWM | 21 |
+| BOOT/status button | 0 |
 
-The ST7789V uses an 8-bit i80 bus at 10 MHz. Initialization enables inversion, swaps XY, mirrors Y for landscape with USB on the left, and applies a `(0, 35)` panel gap. Sources: [LILYGO T-Display-S3](https://github.com/Xinyuan-LilyGO/T-Display-S3) and [LilyGo-Display-IDF](https://github.com/Xinyuan-LilyGO/LilyGo-Display-IDF).
+The ILI9341 uses SPI2 at 40 MHz and GPIO21 drives the active-high backlight.
+The driver keeps the panel in native 240×320 addressing and transposes dirty
+stripes into a logical 320×240 landscape surface. Touch, SD and RGB LED are not
+required by WazeHUD and remain unused. See `waze-hud/DISPLAY_CYD_28_PORTING.md`.
 
 ## Protocol behavior
 
@@ -134,7 +145,9 @@ The supplied `waze-hud-link-sdk-ai-bundle.md` is normative. The implementation u
 - Alert codes `0..74` are normalized; recognized codes use their mapped asset and unsupported future codes use the generic hazard asset
 - `alrs` is explicitly requested and capped at four entries; its `alrs[0]` mirror is removed from the normalized upcoming list
 - Equal-distance `SPEED_DROP` alerts are normalized with the higher `v` first while preserving producer near-to-far order for every other case
-- Alert UI shows up to two upcoming items; an active `avg=1` no-passing zone takes the dominant slot and reduces the upcoming row to one centered item
+- Lane guidance supports up to ten lanes in a dedicated row below speed and above the street name, with ETA on its left. Lane heads use the embedded Waze `direction_arrow_head.png` artwork. The second/third `alrs` items remain directly below the dominant alert in the right-hand alert column.
+- The onboard RGB LED cycles colors while disconnected, stays blue while connected without fresh state, stays green at normal speed, and blinks red at 2 Hz only above the configured overspeed threshold.
+- An active `avg=1` no-passing zone takes the dominant alert slot; the next two non-zone alerts remain in the guidance row.
 - Alert distance text is blue for valid distances below 500 m and keeps its normal color at 500 m or farther
 - `avg` is rendered as a Vietnamese no-passing zone, never as an average-speed camera
 
@@ -156,7 +169,7 @@ When the producer advertises `device_config`, the HUD publishes five controls:
 
 The seven-item schema has schema version 3. Older stored schemas migrate once, preserving existing values while defaulting new orientation settings off. The firmware stages every value, rejects missing/duplicate/unknown IDs, persists the complete candidate to NVS, increments the value revision, and only then sends a successful `cfg_ack`. A repeated commit receives the previous transaction result instead of applying twice.
 
-GPIO14 is the active-low programmable orientation button. A debounced press toggles `rotate_display`, persists it to NVS, and refreshes the UI without rebooting. GPIO0 remains reserved as the BOOT strap. `mirror_hud` and `rotate_display` compose independently.
+GPIO0/BOOT is programmable after startup: one press toggles 180-degree rotation, a double press toggles the mirrored HUD, and a long hold shows device status. Both transforms persist in NVS and compose independently.
 
 ## Diagnose hardware
 
@@ -164,9 +177,9 @@ Useful production log tags are `APP`, `DISPLAY`, `BLE`, `HLP`, `STATE`, and `CON
 
 | Symptom | Check |
 |---|---|
-| LCD remains dark | Confirm this is the ST7789V T-Display-S3 and GPIO15 is driven high |
-| Wrong orientation | Confirm USB connector is on the left; the alternate physical orientation needs mirror adjustment |
-| Red and blue swapped | Verify `swap_color_bytes` and RGB endian behavior on the physical panel revision |
+| LCD remains dark | Confirm the PCB uses the ESP32-2432S028 pin map, GPIO21 is high/PWM, and LCD CS is GPIO15 |
+| Wrong orientation | Press BOOT briefly or toggle `rotate_display`; verify the software transpose path is active |
+| Red and blue swapped | Verify BGR order, inversion, and RGB565 byte swap on the physical panel revision |
 | Phone cannot discover HUD | Confirm NimBLE is enabled and the HLP service UUID is advertised |
 | Connects but no state | Confirm Android enabled RX notifications and logs show `dev` then `hi` |
 | `FRAME_TOO_LARGE` behavior | Send more than 511 payload bytes followed by LF and confirm the next valid line is accepted |
@@ -174,4 +187,4 @@ Useful production log tags are `APP`, `DISPLAY`, `BLE`, `HLP`, `STATE`, and `CON
 
 ## Build evidence
 
-The production configuration was compiled locally with ESP-IDF 5.5.5 and `idf.py set-target esp32s3 && idf.py build`. With the expanded HLP/1 asset set, the application binary is `0x1557c0` bytes, leaving 56% of each 3 MB OTA slot available. The mock build is `0x10b960`. Display initialization, BLE discovery, MTU negotiation, HLP handshake, dynamic configuration, live `st` street data, and sustained state/heartbeat operation were exercised on the attached T-Display-S3 and Waze producer.
+The CYD production configuration was compiled locally with ESP-IDF 5.5.5 and `idf.py set-target esp32 && idf.py build`. Hardware display color/orientation, BLE operation and long-duration stability are being validated on the connected ESP32-2432S028.

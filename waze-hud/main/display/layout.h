@@ -16,6 +16,8 @@ namespace layout {
 #if CONFIG_WAZE_HUD_DISPLAY_35_480X320
 constexpr bool IsLargeDisplay = true;
 constexpr const char *DeviceName = "ESP32-S3 3.5-inch HUD";
+constexpr int UiYScaleNumerator = 5;
+constexpr int UiYScaleDenominator = 4;
 constexpr int Width = 320;
 constexpr int Height = 213;
 constexpr int PhysicalWidth = 480;
@@ -24,15 +26,33 @@ constexpr int PhysicalHeight = 320;
 // main/street boundary four-pixel aligned after landscape pixels are rotated
 // into the ST77922 native 320x480 address space.
 constexpr int MainHeight = 173;
+constexpr int GuidanceHeight = 0;
 constexpr int StreetHeight = Height - MainHeight;
+#elif CONFIG_WAZE_HUD_DISPLAY_CYD_28
+constexpr bool IsLargeDisplay = false;
+constexpr const char *DeviceName = "ESP32-2432S028 2.8-inch HUD";
+// Use a native 320x240 canvas. Only layout positions are spread vertically;
+// bitmap assets and fonts remain square, unscaled pixels.
+constexpr int UiYScaleNumerator = 7;
+constexpr int UiYScaleDenominator = 5;
+constexpr int Width = 320;
+constexpr int Height = 240;
+constexpr int PhysicalWidth = 320;
+constexpr int PhysicalHeight = 240;
+constexpr int MainHeight = 146;
+constexpr int GuidanceHeight = 50;
+constexpr int StreetHeight = Height - MainHeight - GuidanceHeight;
 #else
 constexpr bool IsLargeDisplay = false;
 constexpr const char *DeviceName = "LILYGO T-Display-S3";
+constexpr int UiYScaleNumerator = 1;
+constexpr int UiYScaleDenominator = 1;
 constexpr int Width = 320;
 constexpr int Height = 170;
 constexpr int PhysicalWidth = 320;
 constexpr int PhysicalHeight = 170;
 constexpr int MainHeight = 140;
+constexpr int GuidanceHeight = 0;
 constexpr int StreetHeight = Height - MainHeight;
 #endif
 
@@ -46,7 +66,8 @@ constexpr Rect Alerts{224, 0, 96, MainHeight};
 constexpr Rect Limits{165, 0, 60, MainHeight};
 constexpr Rect Alerts{225, 0, 95, MainHeight};
 #endif
-constexpr Rect Street{0, MainHeight, Width, StreetHeight};
+constexpr Rect Guidance{0, MainHeight, Width, GuidanceHeight};
+constexpr Rect Street{0, MainHeight + GuidanceHeight, Width, StreetHeight};
 constexpr Rect Full{0, 0, Width, Height};
 
 constexpr int scaleCoordinate(int value, int logicalExtent, int physicalExtent) {
@@ -70,7 +91,8 @@ constexpr int regionPixels(const Rect &logical) {
 constexpr int maxInt(int left, int right) { return left > right ? left : right; }
 constexpr int MaxRegionPixels = maxInt(
     maxInt(regionPixels(Maneuver), regionPixels(Speed)),
-    maxInt(maxInt(regionPixels(Limits), regionPixels(Alerts)), regionPixels(Street)));
+    maxInt(maxInt(regionPixels(Limits), regionPixels(Alerts)),
+           maxInt(regionPixels(Guidance), regionPixels(Street))));
 
 static_assert(physicalRect(Full).x == 0 && physicalRect(Full).y == 0,
               "Display viewport must start at the framebuffer origin");
@@ -80,7 +102,8 @@ static_assert(physicalRect(Full).width == PhysicalWidth &&
 static_assert(physicalRect(Maneuver).width + physicalRect(Speed).width +
               physicalRect(Limits).width + physicalRect(Alerts).width == PhysicalWidth,
               "HUD columns must cover the framebuffer without gaps");
-static_assert(physicalRect(Maneuver).height + physicalRect(Street).height == PhysicalHeight,
+static_assert(physicalRect(Maneuver).height + physicalRect(Guidance).height +
+              physicalRect(Street).height == PhysicalHeight,
               "HUD rows must cover the framebuffer without gaps");
 #if CONFIG_WAZE_HUD_DISPLAY_35_480X320
 static_assert(physicalRect(Maneuver).x % 4 == 0 &&

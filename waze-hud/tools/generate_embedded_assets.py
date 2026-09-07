@@ -290,11 +290,16 @@ def emit_font(name: str, source: Path, size: int, cps: list[int]) -> tuple[str, 
 
 def emit_mask(name: str, source: Path, size: int) -> tuple[str, str]:
     image = fit_rgba(source, size)
+    return emit_mask_image(name, image)
+
+
+def emit_mask_image(name: str, image: Image.Image) -> tuple[str, str]:
+    width, height = image.size
     alpha = bytes(image.getchannel("A").get_flattened_data())
     declaration = f"extern const AlphaMask k{name};"
     body = (
         f"alignas(4) static const uint8_t k{name}Alpha[] = {{\n{cpp_bytes(alpha)}\n}};\n"
-        f"const AlphaMask k{name}{{{size},{size},k{name}Alpha}};\n"
+        f"const AlphaMask k{name}{{{width},{height},k{name}Alpha}};\n"
     )
     return declaration, body
 
@@ -331,6 +336,8 @@ def main() -> None:
         missing.append("App/boot_icon.png")
     if not (SOURCE / "speedLimit" / "no_speed.png").is_file():
         missing.append("speedLimit/no_speed.png")
+    if not (SOURCE / "Waze" / "direction_arrow_head.png").is_file():
+        missing.append("Waze/direction_arrow_head.png")
     if missing:
         raise SystemExit("Missing source assets: " + ", ".join(missing))
 
@@ -372,6 +379,22 @@ def main() -> None:
         "NoSpeedCurrent", SOURCE / "speedLimit" / "no_speed.png", 56)
     declarations.append(declaration)
     bodies.append(body)
+
+    # The source arrow points up. Generate all eight compass orientations once
+    # so the ESP32 renderer only blends a small alpha mask at runtime.
+    lane_head = Image.new("RGBA", (12, 12), (0, 0, 0, 0))
+    fitted_lane_head = fit_rgba(SOURCE / "Waze" / "direction_arrow_head.png", 10)
+    lane_head.alpha_composite(fitted_lane_head, (1, 1))
+    for name, angle in (
+        ("LaneArrowHeadUp", 0), ("LaneArrowHeadUpRight", -45),
+        ("LaneArrowHeadRight", -90), ("LaneArrowHeadDownRight", -135),
+        ("LaneArrowHeadDown", 180), ("LaneArrowHeadDownLeft", 135),
+        ("LaneArrowHeadLeft", 90), ("LaneArrowHeadUpLeft", 45),
+    ):
+        oriented = lane_head.rotate(angle, resample=Image.Resampling.BICUBIC)
+        declaration, body = emit_mask_image(name, oriented)
+        declarations.append(declaration)
+        bodies.append(body)
 
     speed_limit_rows: list[str] = []
     speed_limit_sources: list[tuple[int, Path]] = []
