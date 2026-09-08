@@ -1,192 +1,194 @@
-# Waze HUD firmware
+# WazeHUD cho màn hình CYD 2.8 inch
 
-Native ESP-IDF firmware that receives normative HLP/1 navigation snapshots over BLE and renders a low-latency automotive HUD on ESP32-2432S028 (CYD 2.8-inch).
+WazeHUD biến mạch ESP32-2432S028 (Cheap Yellow Display) thành màn hình dẫn đường phụ cho ô tô, nhận dữ liệu trực tiếp từ Waze Mod qua Bluetooth Low Energy (BLE).
 
-> This branch targets the ESP32-WROOM-32 board marked `ESP32-2432S028`. Some vendor documents append `R` for the resistive-touch SKU; WazeHUD does not use touch. It does not target similarly named ESP32-S3 variants.
+> [!IMPORTANT]
+> Branch này dành riêng cho mạch **ESP32-2432S028 dùng ESP32-WROOM-32 và màn ILI9341**. Không flash firmware này cho các bản CYD dùng ESP32-S3 hoặc controller màn hình khác.
 
-## Build and flash
+## Hình ảnh thực tế
 
-Prerequisites:
+![WazeHUD hiển thị biển giới hạn tốc độ, cảnh báo và ETA trên CYD 2.8 inch](./assets/demo/image_01.png)
 
-- ESP-IDF 5.5.5
-- An ESP32-2432S028 CYD 2.8-inch with the ILI9341-compatible pin map
-- A data-capable USB cable
+![WazeHUD hoạt động song song với Waze Mod trên điện thoại](./assets/demo/image_02.png)
 
-From an activated ESP-IDF shell:
+## Tính năng chính
 
-```bash
-idf.py set-target esp32
-idf.py build
-idf.py -p PORT flash monitor
+- Kết nối không dây với Waze Mod qua BLE, tên thiết bị là `WazeHUD`.
+- Hiển thị tốc độ xe, biển giới hạn tốc độ, hướng rẽ và khoảng cách tới lượt rẽ.
+- Hiển thị cảnh báo chính cùng hai cảnh báo tiếp theo.
+- Lane guidance tối đa 10 làn, có đánh dấu làn được khuyến nghị.
+- Hiển thị ETA, tên đường tiếng Việt và đồng hồ.
+- Hai bố cục tốc độ: ưu tiên tốc độ xe hoặc ưu tiên biển giới hạn.
+- Hỗ trợ lật gương để phản chiếu lên kính lái và xoay màn hình 180°.
+- Lưu độ sáng, giao diện, bố cục và các thiết lập khác vào bộ nhớ NVS.
+- Cập nhật từng vùng thay đổi để giảm độ trễ khi vẽ màn hình.
+
+## Cài firmware nhanh
+
+### Chọn đúng file
+
+Firmware phát hành dùng quy tắc đặt tên:
+
+```text
+WazeHUD-<phiên-bản>-WazeMod-<phiên-bản>-<mạch>-<ngày-giờ>-Factory.bin
+WazeHUD-<phiên-bản>-WazeMod-<phiên-bản>-<mạch>-<ngày-giờ>-OTA.bin
 ```
 
-On this Windows workstation, activate the installed environment first:
+| File | Dùng khi nào | Offset |
+|---|---|---:|
+| `Factory.bin` | Cài mới, đổi partition hoặc khôi phục mạch | `0x0` |
+| `OTA.bin` | Chỉ cập nhật app khi mạch đã có đúng partition table | `0x20000` |
+
+> [!WARNING]
+> Không flash file OTA tại `0x0`. Nếu không chắc firmware cũ dùng partition nào, hãy dùng Factory BIN.
+
+### Flash Factory BIN trên Windows
+
+1. Cắm mạch bằng cáp USB có truyền dữ liệu.
+2. Mở Device Manager để tìm cổng `USB-SERIAL CH340`, ví dụ `COM12`.
+3. Kích hoạt ESP-IDF và flash file Factory:
 
 ```powershell
 . 'C:\Espressif\tools\Microsoft.v5.5.5.PowerShell_profile.ps1'
-cd D:\Code\WazeHUD\waze-hud
-idf.py set-target esp32
-idf.py build
+esptool.py --chip esp32 --port COM12 --baud 460800 write_flash 0x0 `
+  .\WazeHUD-1.0.6-WazeMod-V12-ESP32-2432S028-YYYYMMDD-HHMMSS-Factory.bin
 ```
 
-The normal build advertises `WazeHUD` and waits for the Waze Mod HUD Link picker to connect. Flash through the CYD's USB-to-UART COM port, not a Bluetooth virtual COM port.
+Thay `COM12` và tên file bằng giá trị thực tế trên máy.
 
-### Build for ESP32-2432S028 / CYD 2.8-inch
+Nếu mạch không tự vào chế độ flash, giữ nút **BOOT**, nhấn rồi thả **RESET**, sau đó thả **BOOT** và chạy lại lệnh.
 
-This branch is dedicated to CYD. Its default sdkconfig targets the classic
-ESP32 with 4 MB flash and no PSRAM, so the commands above are sufficient.
+## Kết nối với Waze Mod
 
-For renderer-only hardware testing, use the existing `sdkconfig.mock.defaults`
-overlay in a separate build directory.
+1. Bật Bluetooth trên điện thoại.
+2. Cấp quyền thiết bị ở gần/Bluetooth cho Waze Mod nếu Android yêu cầu.
+3. Trong phần HUD Link của Waze Mod, chọn thiết bị `WazeHUD`.
+4. Mở một hành trình trong Waze.
 
-## Run the renderer without a phone
+Khi kết nối thành công, firmware thương lượng HLP/1 ở tốc độ cập nhật 4 Hz. Không ghép đôi HUD bằng cổng COM Bluetooth của Windows.
 
-Enable **Waze HUD firmware → Enable renderer mock mode** in `idf.py menuconfig`, then build normally. Mock mode disables BLE input and cycles ten deterministic states including lane guidance, minimum speed, extended alerts, a no-passing zone, overspeed, roundabout-straight, disconnect, and a long Vietnamese street name.
+## Hiểu trạng thái LED phía sau
 
-For a separate command-line mock build without changing the production `sdkconfig`:
+| Trạng thái | Màu LED |
+|---|---|
+| Chưa kết nối điện thoại | Đổi màu RGB liên tục |
+| Đã kết nối nhưng chưa có dữ liệu dẫn đường mới | Xanh dương |
+| Tốc độ bình thường | Xanh lá |
+| Vượt ngưỡng tốc độ | Nháy đỏ 2 Hz |
+
+Tốc độ bằng đúng giới hạn không bị tính là quá tốc. Cảnh báo chỉ bật khi tốc độ xe lớn hơn `giới hạn + offset` đã cấu hình.
+
+## Dùng nút BOOT
+
+Sau khi mạch khởi động xong, nút BOOT có ba thao tác:
+
+| Thao tác | Kết quả |
+|---|---|
+| Nhấn một lần | Xoay màn hình 180° |
+| Nhấn đúp | Bật hoặc tắt lật gương HUD |
+| Nhấn giữ | Hiện trạng thái BLE của thiết bị |
+
+Lật gương và xoay 180° hoạt động độc lập, đồng thời được lưu lại sau khi mất nguồn.
+
+## Cấu hình từ Waze Mod
+
+Khi Waze Mod hỗ trợ `device_config`, HUD gửi lên chín thiết lập sau:
+
+| Thiết lập | Giá trị | Ý nghĩa |
+|---|---|---|
+| Độ sáng | 10–100%, bước 5% | Điều chỉnh đèn nền màn hình |
+| Giao diện | Tự động / Ban ngày / Ban đêm | Chọn màu giao diện |
+| Hiển thị tốc độ | Tốc độ hiện tại / Biển giới hạn | Chọn thành phần tốc độ chính |
+| Hiện tên đường | Bật / Tắt | Ẩn hoặc hiện tên đường |
+| Phản chiếu HUD | Bật / Tắt | Lật ngang để phản chiếu kính lái |
+| Xoay màn hình | Bật / Tắt | Xoay 180° theo hướng lắp mạch |
+| Ngưỡng quá tốc | −10 đến +5 km/h | Bù vào giới hạn trước khi cảnh báo |
+| Dịch ngang | −5 đến +5 px | Tinh chỉnh vị trí giao diện |
+| Dịch dọc | −5 đến +5 px | Tinh chỉnh vị trí giao diện |
+
+Ở chế độ **Biển giới hạn**, biển báo được phóng lớn làm nội dung chính; tốc độ xe hiện tại xuất hiện nhỏ ở góc dưới-phải của biển.
+
+## Build từ mã nguồn
+
+### Yêu cầu
+
+- ESP-IDF 5.5.5.
+- Mạch ESP32-2432S028, flash 4 MB, không có PSRAM.
+- Cáp USB dữ liệu và driver CH340 trên Windows.
+
+### Build và flash
+
+```powershell
+. 'C:\Espressif\tools\Microsoft.v5.5.5.PowerShell_profile.ps1'
+Set-Location D:\Code\WazeHUD\waze-hud
+idf.py set-target esp32
+idf.py build
+idf.py -p COM12 -b 460800 flash monitor
+```
+
+Thành phẩm app nằm tại:
+
+```text
+waze-hud/build/waze_hud_cyd_28.bin
+```
+
+### Chạy giao diện thử không cần điện thoại
+
+Mock mode lần lượt hiển thị các tình huống như rẽ, vòng xuyến, quá tốc, cảnh báo, tên đường dài và lane guidance 10 làn.
 
 ```powershell
 idf.py -B build-mock `
-  -D SDKCONFIG=./sdkconfig.mock `
+  -D SDKCONFIG=sdkconfig.mock `
   -D "SDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.mock.defaults" `
   set-target esp32
-idf.py -B build-mock -D SDKCONFIG=./sdkconfig.mock build
+idf.py -B build-mock -D SDKCONFIG=sdkconfig.mock build
 ```
 
-Minimum speed remains a mock-only internal capability. Lane guidance is available through the
-opt-in HLP/1 field `lan`; the decoder clears it naturally when Android sends `"lan":[]`.
+## Thông số phần cứng
 
-## Architecture
-
-```mermaid
-flowchart LR
-    phone[Android / Waze Mod] -->|BLE writes| ble[NimBLE transport]
-    ble -->|bounded chunk queue| protocol[HLP framing task]
-    protocol --> decoder[JSON decoder]
-    decoder -->|fixed snapshot| state[HUD state store]
-    state -->|length-one queue| ui[UI task]
-    config[NVS device config] --> ui
-    ui -->|dirty RGB565 regions| lcd[Board-specific LCD driver]
-    protocol -->|dev / pong / cfg_ack| ble
-```
-
-The callback-to-display path has these boundaries:
-
-| Layer | Responsibility | Allocation policy |
-|---|---|---|
-| NimBLE transport | GATT service, TX writes, RX notification chunks, advertising restart | Bounded 16-entry event queue |
-| HLP framing | LF framing, 512-byte limit, UTF-8 validation and resynchronization | Fixed 512-byte receiver |
-| Protocol | Envelope validation, immediate ping/pong, handshake and configuration routing | One long-lived task |
-| Decoder | Default semantics, enum normalization, `(sess, ts)` ordering | Temporary cJSON DOM deleted per frame |
-| State store | Thread-safe immutable snapshot publication | Fixed-capacity strings and arrays |
-| Renderer | Dirty regions, embedded Waze assets, antialiased Vietnamese/font-number rendering | One profile-sized internal DMA buffer |
-| Display | Board-specific i80/SPI transfer, landscape transform, PWM backlight | One transfer in flight |
-| Configuration | Staged full-form validation and NVS commit before ACK | One bounded transaction |
-
-BLE callbacks only copy bytes or lifecycle events. JSON parsing, configuration storage, and LCD transfers run in separate task contexts.
-
-## Embedded assets and fonts
-
-The firmware uses selected source files from `D:\Code\WazeHUD\assets`:
-
-- Waze maneuver PNGs become 60×60 alpha masks tinted by the active HUD theme.
-- Because the source pack has no dedicated keep-left/right PNG, HLP `KEEP_LEFT/KEEP_RIGHT` use the closest Waze branch assets `exit_left/exit_right` before any procedural fallback.
-- Alert PNGs become RGB565 plus alpha at 44×44 and 26×26; the generated lookup covers the asset-backed HLP alert codes through `74`.
-- Camera enums now remain distinct: speed `2`, phone `40`, dummy `41`, seatbelt `42`, distance `43`, bus-lane `44`, noise `45`, and stop-sign `46`.
-- Known speed limits use `speedLimit/speed_limit_<value>.png` at 56×56, 44×44, and 26×26.
-- HLP `lim=0` renders `speedLimit/no_speed.png` at 56×56 instead of hiding the current-limit region.
-- `App/boot_icon.png` is edge-background-keyed and embedded at 96×96 for the left-aligned boot/connection screen.
-- `font_number.ttf` (TGL Engschrift) supplies dynamic speed and road-sign numerals.
-- `font_text.otf` supplies antialiased labels and the complete precomposed Vietnamese alphabet.
-
-PNG and font decoding never occurs on the ESP32. Generated C++ is checked in at
-`main/assets/generated_assets.cpp`, so the normal ESP-IDF build has no Pillow dependency. To regenerate after changing the source pack, run:
-
-```powershell
-& 'C:\Users\admin\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe' `
-  .\tools\generate_embedded_assets.py
-```
-
-For speed values present in `assets/speedLimit`, the renderer uses the generated sign asset. An unknown value falls back to the dynamic circle-and-number primitive, so legitimate future limits are never hidden.
-
-## Hardware binding
-
-The driver follows the ESP32-2432S028 schematic and working ESP-IDF examples:
-
-| Signal | GPIO |
-|---|---:|
-| LCD MOSI / MISO / SCLK | 13 / 12 / 14 |
-| LCD CS / DC | 15 / 2 |
-| LCD reset | Tied to EN |
-| Backlight PWM | 21 |
-| BOOT/status button | 0 |
-
-The ILI9341 uses SPI2 at 40 MHz and GPIO21 drives the active-high backlight.
-The driver keeps the panel in native 240×320 addressing and transposes dirty
-stripes into a logical 320×240 landscape surface. Touch, SD and RGB LED are not
-required by WazeHUD and remain unused. See `waze-hud/DISPLAY_CYD_28_PORTING.md`.
-
-## Protocol behavior
-
-The supplied `waze-hud-link-sdk-ai-bundle.md` is normative. The implementation uses exactly its BLE UUIDs and HLP/1 fields.
-
-- Device name: `WazeHUD`
-- BLE rate request: 4 Hz
-- Framing: UTF-8 JSON object plus LF
-- Maximum frame: 512 bytes including LF
-- Android writes TX with response; firmware notifies RX
-- `dev` is sent after RX notification subscription
-- `ping` receives an immediate `pong`
-- New sessions reset timestamp/state ordering
-- Unknown keys and message types are ignored
-- Missing state fields use HLP/1 defaults
-- `rm` exact meters is requested and preferred; `rkm` remains the legacy fallback
-- Maneuver `19` renders the Waze roundabout-straight asset and keeps the negotiated exit number
-- Alert codes `0..74` are normalized; recognized codes use their mapped asset and unsupported future codes use the generic hazard asset
-- `alrs` is explicitly requested and capped at four entries; its `alrs[0]` mirror is removed from the normalized upcoming list
-- Equal-distance `SPEED_DROP` alerts are normalized with the higher `v` first while preserving producer near-to-far order for every other case
-- Lane guidance supports up to ten lanes in a dedicated row below speed and above the street name, with ETA on its left. Lane heads use the embedded Waze `direction_arrow_head.png` artwork. The second/third `alrs` items remain directly below the dominant alert in the right-hand alert column.
-- The onboard RGB LED cycles colors while disconnected, stays blue while connected without fresh state, stays green at normal speed, and blinks red at 2 Hz only above the configured overspeed threshold.
-- An active `avg=1` no-passing zone takes the dominant alert slot; the next two non-zone alerts remain in the guidance row.
-- Alert distance text is blue for valid distances below 500 m and keeps its normal color at 500 m or farther
-- `avg` is rendered as a Vietnamese no-passing zone, never as an average-speed camera
-
-The state decoder supports `nav`, `spd`, `lim`, `over`, `trn`, `trn2`, `dst`, `exit`, `lan`, `st`, `st2`, `eta`, `rmin`, `rm`, `rkm`, `avg`, `avgL`, `avgR`, `avgP`, `alr`, `alrD`, `alrV`, `alrs`, and `ts`. It implements maneuver codes `0..19` and alert codes `0..74`. Prefer exact `rm` meters for display and use `rkm` only as the legacy fallback.
-
-## Configure the device from Waze
-
-When the producer advertises `device_config`, the HUD publishes nine controls:
-
-| ID | Type | Validation |
-|---|---|---|
-| `brightness` | Slider | 10–100 in steps of 5 |
-| `theme` | Selection | `auto`, `day`, or `night` |
-| `speed_display` | Selection | `current_main` or `limit_main` |
-| `show_street` | Toggle | Boolean |
-| `mirror_hud` | Toggle | Horizontal windshield-reflection mirror, persisted in NVS |
-| `rotate_display` | Toggle | 180° mounting rotation for USB connector on the right |
-| `overspeed_offset` | Slider | −10 through 5 km/h |
-| `offset_x` | Integer | −5 through 5 |
-| `offset_y` | Integer | −5 through 5 |
-
-The nine-item schema has schema version 6. Older stored schemas migrate once, preserving existing values while defaulting the new speed layout to current-speed primary. The firmware stages every value, rejects missing/duplicate/unknown IDs, persists the complete candidate to NVS, increments the value revision, and only then sends a successful `cfg_ack`.
-
-GPIO0/BOOT is programmable after startup: one press toggles 180-degree rotation, a double press toggles the mirrored HUD, and a long hold shows device status. Both transforms persist in NVS and compose independently.
-
-## Diagnose hardware
-
-Useful production log tags are `APP`, `DISPLAY`, `BLE`, `HLP`, `STATE`, and `CONFIG`.
-
-| Symptom | Check |
+| Chức năng | GPIO / thông số |
 |---|---|
-| LCD remains dark | Confirm the PCB uses the ESP32-2432S028 pin map, GPIO21 is high/PWM, and LCD CS is GPIO15 |
-| Wrong orientation | Press BOOT briefly or toggle `rotate_display`; verify the software transpose path is active |
-| Red and blue swapped | Verify BGR order, inversion, and RGB565 byte swap on the physical panel revision |
-| Phone cannot discover HUD | Confirm NimBLE is enabled and the HLP service UUID is advertised |
-| Connects but no state | Confirm Android enabled RX notifications and logs show `dev` then `hi` |
-| `FRAME_TOO_LARGE` behavior | Send more than 511 payload bytes followed by LF and confirm the next valid line is accepted |
-| Street glyph issue | Capture the UTF-8 code point; the generated font includes the complete precomposed Vietnamese alphabet |
+| LCD | ILI9341, SPI2, 40 MHz |
+| MOSI / MISO / SCLK | 13 / 12 / 14 |
+| LCD CS / DC | 15 / 2 |
+| LCD reset | Nối chung với EN |
+| Backlight PWM | GPIO21, active-high |
+| LED đỏ / xanh lá / xanh dương | GPIO4 / GPIO16 / GPIO17, active-low |
+| Nút BOOT | GPIO0, active-low |
+| Độ phân giải | 320×240 landscape |
 
-## Build evidence
+Màn hình được giữ ở address space gốc 240×320. Firmware xoay các dirty stripe bằng phần mềm sang giao diện landscape 320×240 để màu sắc và chiều hiển thị ổn định giữa các lô CYD.
 
-The CYD production configuration was compiled locally with ESP-IDF 5.5.5 and `idf.py set-target esp32 && idf.py build`. Hardware display color/orientation, BLE operation and long-duration stability are being validated on the connected ESP32-2432S028.
+## Xử lý lỗi thường gặp
+
+| Hiện tượng | Cách kiểm tra |
+|---|---|
+| Không thấy cổng COM | Đổi cáp USB, cài driver CH340 và thử cổng USB khác |
+| Flash không kết nối được | Giữ BOOT, nhấn RESET, thả RESET rồi thả BOOT |
+| Màn hình tối | Kiểm tra đúng mạch ESP32-2432S028 và backlight GPIO21 |
+| Màu đỏ/xanh bị đảo | Kiểm tra đúng controller ILI9341 và profile BGR |
+| Màn hình ngược | Nhấn BOOT một lần hoặc bật cấu hình xoay màn hình |
+| Hình bị lật | Nhấn đúp BOOT hoặc tắt `Phản chiếu HUD` |
+| Điện thoại không thấy HUD | Kiểm tra LED đang đổi màu, quyền Bluetooth và tên `WazeHUD` |
+| Đã kết nối nhưng chưa có dữ liệu | Bắt đầu hành trình trong Waze và kiểm tra LED xanh dương |
+
+## Tài liệu kỹ thuật
+
+- [Chi tiết quá trình port CYD 2.8 inch](./waze-hud/DISPLAY_CYD_28_PORTING.md)
+- [Hướng dẫn flash firmware bằng tiếng Việt](./waze-hud/FLASH_FIRMWARE_VI.md)
+- [Đặc tả giao thức HLP/1](./waze-hud-link-sdk-ai-bundle.md)
+
+## Cấu trúc mã nguồn
+
+```text
+waze-hud/main/
+├── bluetooth/   # BLE GATT, advertising và reconnect
+├── protocol/    # HLP/1 framing, handshake và JSON decoder
+├── state/       # Snapshot trạng thái HUD giữa các task
+├── display/     # Layout, renderer, font và driver ILI9341
+├── config/      # Cấu hình động và lưu NVS
+├── system/      # LED RGB, nút BOOT và trạng thái hệ thống
+└── assets/      # Ảnh/font đã chuyển thành dữ liệu nhúng
+```
+
+BLE callback chỉ đưa dữ liệu vào queue. Việc parse JSON, cập nhật state và truyền ảnh RGB565 tới LCD được thực hiện ngoài callback để tránh làm nghẽn Bluetooth.
