@@ -58,6 +58,7 @@ constexpr int StreetHeight = Height - MainHeight;
 
 constexpr Rect Maneuver{0, 0, 85, MainHeight};
 constexpr Rect Speed{85, 0, 80, MainHeight};
+constexpr Rect SpeedCluster{85, 0, 140, MainHeight};
 #if CONFIG_WAZE_HUD_DISPLAY_35_480X320
 // These logical widths map to landscape x={0,128,248,336,480}.
 constexpr Rect Limits{165, 0, 59, MainHeight};
@@ -90,7 +91,7 @@ constexpr int regionPixels(const Rect &logical) {
 
 constexpr int maxInt(int left, int right) { return left > right ? left : right; }
 constexpr int MaxRegionPixels = maxInt(
-    maxInt(regionPixels(Maneuver), regionPixels(Speed)),
+    maxInt(maxInt(regionPixels(Maneuver), regionPixels(Speed)), regionPixels(SpeedCluster)),
     maxInt(maxInt(regionPixels(Limits), regionPixels(Alerts)),
            maxInt(regionPixels(Guidance), regionPixels(Street))));
 

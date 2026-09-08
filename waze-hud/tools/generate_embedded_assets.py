@@ -376,7 +376,7 @@ def main() -> None:
     bodies.append(body)
 
     declaration, body = emit_color_bitmap(
-        "NoSpeedCurrent", SOURCE / "speedLimit" / "no_speed.png", 56)
+        "NoSpeedCurrent", SOURCE / "speedLimit" / "no_speed.png", 60)
     declarations.append(declaration)
     bodies.append(body)
 
@@ -404,7 +404,7 @@ def main() -> None:
             speed_limit_sources.append((int(match.group(1)), path))
     for value, path in sorted(speed_limit_sources):
         names = []
-        for suffix, size in (("Current", 56), ("AlertLarge", 44), ("AlertSmall", 26)):
+        for suffix, size in (("Current", 60), ("AlertLarge", 44), ("AlertSmall", 26)):
             name = f"SpeedLimit{value}{suffix}"
             _, body = emit_color_bitmap(name, path, size)
             bodies.append(body)

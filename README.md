@@ -155,19 +155,21 @@ The state decoder supports `nav`, `spd`, `lim`, `over`, `trn`, `trn2`, `dst`, `e
 
 ## Configure the device from Waze
 
-When the producer advertises `device_config`, the HUD publishes five controls:
+When the producer advertises `device_config`, the HUD publishes nine controls:
 
 | ID | Type | Validation |
 |---|---|---|
 | `brightness` | Slider | 10–100 in steps of 5 |
 | `theme` | Selection | `auto`, `day`, or `night` |
+| `speed_display` | Selection | `current_main` or `limit_main` |
 | `show_street` | Toggle | Boolean |
 | `mirror_hud` | Toggle | Horizontal windshield-reflection mirror, persisted in NVS |
 | `rotate_display` | Toggle | 180° mounting rotation for USB connector on the right |
+| `overspeed_offset` | Slider | −10 through 5 km/h |
 | `offset_x` | Integer | −5 through 5 |
 | `offset_y` | Integer | −5 through 5 |
 
-The seven-item schema has schema version 3. Older stored schemas migrate once, preserving existing values while defaulting new orientation settings off. The firmware stages every value, rejects missing/duplicate/unknown IDs, persists the complete candidate to NVS, increments the value revision, and only then sends a successful `cfg_ack`. A repeated commit receives the previous transaction result instead of applying twice.
+The nine-item schema has schema version 6. Older stored schemas migrate once, preserving existing values while defaulting the new speed layout to current-speed primary. The firmware stages every value, rejects missing/duplicate/unknown IDs, persists the complete candidate to NVS, increments the value revision, and only then sends a successful `cfg_ack`.
 
 GPIO0/BOOT is programmable after startup: one press toggles 180-degree rotation, a double press toggles the mirrored HUD, and a long hold shows device status. Both transforms persist in NVS and compose independently.
 

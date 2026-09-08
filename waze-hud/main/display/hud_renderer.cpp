@@ -63,6 +63,7 @@ bool guidanceChanged(const HudState &a, const HudState &b) {
 
 bool hasSettingsChanged(const DeviceSettings &a, const DeviceSettings &b) {
     return a.brightness != b.brightness || a.theme != b.theme || a.showStreet != b.showStreet ||
+           a.speedDisplayMode != b.speedDisplayMode ||
            a.mirrorHud != b.mirrorHud || a.rotateDisplay != b.rotateDisplay ||
            a.overspeedOffsetKmh != b.overspeedOffsetKmh ||
            a.offsetX != b.offsetX || a.offsetY != b.offsetY || a.revision != b.revision;
@@ -470,11 +471,19 @@ void HudRenderer::render(const HudState &state, const DeviceSettings &settings,
             ESP_LOGE(kTag, "HUD orientation update failed: %s", esp_err_to_name(orientationResult));
     }
     const bool systemStatusChanged = firstFrame_ || systemStatus != previousSystemStatus_;
+    const bool limitPrimary = settings.speedDisplayMode == SpeedDisplayMode::LimitPrimary;
+    auto renderSpeedArea = [&]() {
+        if (limitPrimary) {
+            renderRegion(layout::SpeedCluster,state,settings,systemStatus);
+        } else {
+            renderRegion(layout::Speed,state,settings,systemStatus);
+            renderRegion(layout::Limits,state,settings,systemStatus);
+        }
+    };
     if (systemStatus.visible) {
         if (systemStatusChanged || configChanged) {
             renderRegion(layout::Maneuver,state,settings,systemStatus);
-            renderRegion(layout::Speed,state,settings,systemStatus);
-            renderRegion(layout::Limits,state,settings,systemStatus);
+            renderSpeedArea();
             renderRegion(layout::Alerts,state,settings,systemStatus);
             renderRegion(layout::Guidance,state,settings,systemStatus);
             renderRegion(layout::Street,state,settings,systemStatus);
@@ -489,19 +498,25 @@ void HudRenderer::render(const HudState &state, const DeviceSettings &settings,
     bool streetRendered = false;
     if (systemStatusClosed || statusChanged || configChanged || !state.connected || !state.hasProducerState) {
         renderRegion(layout::Maneuver,state,settings,systemStatus);
-        renderRegion(layout::Speed,state,settings,systemStatus);
-        renderRegion(layout::Limits,state,settings,systemStatus);
+        renderSpeedArea();
         renderRegion(layout::Alerts,state,settings,systemStatus);
         renderRegion(layout::Guidance,state,settings,systemStatus);
         renderRegion(layout::Street,state,settings,systemStatus);
         streetRendered = true;
     } else {
         if (maneuverChanged(state, previous_)) renderRegion(layout::Maneuver,state,settings,systemStatus);
-        if (state.speedKmh != previous_.speedKmh ||
-            state.speedLimitKmh != previous_.speedLimitKmh)
-            renderRegion(layout::Speed,state,settings,systemStatus);
-        if (state.speedLimitKmh != previous_.speedLimitKmh || state.hasMinimumSpeed != previous_.hasMinimumSpeed ||
-            state.minimumSpeedKmh != previous_.minimumSpeedKmh) renderRegion(layout::Limits,state,settings,systemStatus);
+        const bool speedChanged = state.speedKmh != previous_.speedKmh ||
+                                  state.speedLimitKmh != previous_.speedLimitKmh;
+        const bool limitChanged = state.speedLimitKmh != previous_.speedLimitKmh ||
+                                  state.hasMinimumSpeed != previous_.hasMinimumSpeed ||
+                                  state.minimumSpeedKmh != previous_.minimumSpeedKmh;
+        if (limitPrimary) {
+            if (speedChanged || limitChanged)
+                renderRegion(layout::SpeedCluster,state,settings,systemStatus);
+        } else {
+            if (speedChanged) renderRegion(layout::Speed,state,settings,systemStatus);
+            if (limitChanged) renderRegion(layout::Limits,state,settings,systemStatus);
+        }
         const bool changedAlerts = alertsChanged(state, previous_);
         if (changedAlerts) renderRegion(layout::Alerts,state,settings,systemStatus);
         if (guidanceChanged(state, previous_))
@@ -514,8 +529,7 @@ void HudRenderer::render(const HudState &state, const DeviceSettings &settings,
             streetRendered = true;
         }
         if (systemStatusChanged) {
-            renderRegion(layout::Speed,state,settings,systemStatus);
-            renderRegion(layout::Limits,state,settings,systemStatus);
+            renderSpeedArea();
             renderRegion(layout::Alerts,state,settings,systemStatus);
         }
     }
@@ -538,6 +552,7 @@ void HudRenderer::renderRegion(const Rect &region, const HudState &state,
     if (systemStatus.visible) renderSystemStatus(canvas, region, systemStatus, settings);
     else if (!state.connected || !state.hasProducerState) renderStatus(canvas, region, state, settings);
     else if (sameRegion(region, layout::Maneuver)) renderManeuver(canvas,state,settings);
+    else if (sameRegion(region, layout::SpeedCluster)) renderLimitPrimary(canvas,state,settings);
     else if (sameRegion(region, layout::Speed)) renderSpeed(canvas,state,settings);
     else if (sameRegion(region, layout::Limits)) renderLimits(canvas,state,settings);
     else if (sameRegion(region, layout::Alerts)) renderAlerts(canvas,state,settings);
@@ -725,6 +740,37 @@ void HudRenderer::renderSpeed(Canvas &canvas, const HudState &state, const Devic
     canvas.fontText(2,mainY(90),"km/h",assets::kTextSmall,colors::Muted,canvas.width()-4,true);
 }
 
+void HudRenderer::renderLimitPrimary(Canvas &canvas, const HudState &state,
+                                     const DeviceSettings &settings) {
+    canvas.clear(colors::Panel);
+    constexpr int signX = 60;
+    constexpr int signY = 59;
+    constexpr int outerRadius = 54;
+    constexpr int innerRadius = 43;
+
+    if (state.speedLimitKmh > 0) {
+        canvas.fillCircle(signX, signY, outerRadius, colors::Red);
+        canvas.fillCircle(signX, signY, innerRadius, colors::White);
+        char limit[5];
+        std::snprintf(limit, sizeof(limit), "%d", state.speedLimitKmh);
+        canvas.fontText(signX - innerRadius,
+                        signY - assets::kNumberLarge.lineHeight / 2,
+                        limit, assets::kNumberLarge, colors::Black,
+                        innerRadius * 2, true);
+    } else if (assets::kNoSpeedCurrent.pixels && assets::kNoSpeedCurrent.alpha) {
+        canvas.colorBitmap(signX - assets::kNoSpeedCurrent.width / 2,
+                           signY - assets::kNoSpeedCurrent.height / 2,
+                           assets::kNoSpeedCurrent);
+    }
+
+    char speed[5];
+    std::snprintf(speed, sizeof(speed), "%d", std::clamp(state.speedKmh, 0, 999));
+    const uint16_t speedColor = firmwareOverspeed(state, settings)
+        ? colors::Red : foreground(settings);
+    canvas.fontText(96, 101, speed, assets::kNumberMedium,
+                    speedColor, 42, true);
+}
+
 void HudRenderer::renderLimits(Canvas &canvas, const HudState &state, const DeviceSettings &) {
     canvas.clear(colors::Panel);
     if (state.speedLimitKmh > 0) {
@@ -732,11 +778,11 @@ void HudRenderer::renderLimits(Canvas &canvas, const HudState &state, const Devi
         if (sign && sign->pixels && sign->alpha) {
             canvas.colorBitmap(30 - sign->width / 2, mainY(48) - sign->height / 2, *sign);
         } else {
-            canvas.fillCircle(30,mainY(48),28,colors::White);
-            canvas.circle(30,mainY(48),28,colors::Red,6);
+            canvas.fillCircle(30,mainY(48),30,colors::White);
+            canvas.circle(30,mainY(48),30,colors::Red,6);
             char value[5]; std::snprintf(value,sizeof(value),"%d",state.speedLimitKmh);
-            canvas.fontText(2,mainY(48)-assets::kNumberMedium.lineHeight/2,value,
-                            assets::kNumberMedium,colors::Black,56,true);
+            canvas.fontText(0,mainY(48)-assets::kNumberMedium.lineHeight/2,value,
+                            assets::kNumberMedium,colors::Black,60,true);
         }
     } else if (assets::kNoSpeedCurrent.pixels && assets::kNoSpeedCurrent.alpha) {
         canvas.colorBitmap(30 - assets::kNoSpeedCurrent.width / 2,

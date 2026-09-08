@@ -71,6 +71,7 @@ BLE callback chỉ sao chép dữ liệu vào queue. JSON, cập nhật state v�
 - Cảnh báo gần dưới 500 m đổi màu khoảng cách sang xanh.
 - LED RGB phía sau đổi màu liên tục khi chưa kết nối, xanh dương khi chờ state, xanh lá ở tốc độ bình thường và nháy đỏ 2 Hz khi quá tốc độ.
 - Hỗ trợ mirror HUD (nhấn đúp BOOT), xoay 180° (nhấn đơn), độ sáng, theme, offset và ngưỡng quá tốc độ lưu trong NVS.
+- Cấu hình `Hien thi toc do` cho phép giữ tốc độ xe làm chính hoặc dùng biển giới hạn lớn làm chính với tốc độ xe nhỏ ở góc dưới-phải.
 - KEY hiển thị trạng thái pin/BLE và đổi hướng màn hình theo cấu hình phần cứng.
 - Mock mode chạy UI không cần điện thoại.
 
