@@ -3,15 +3,9 @@
 /build-35/
 /build-35-mock/
 /build-cyd/
+/artifact/
 /sdkconfig
-/sdkconfig.old
-/sdkconfig.mock
-/sdkconfig.mock.old
-/sdkconfig.35
-/sdkconfig.35.old
-/sdkconfig.35.mock
-/sdkconfig.35.mock.old
-/sdkconfig.cyd
+/sdkconfig.**
 backups/
 dist/
 .vscode/
