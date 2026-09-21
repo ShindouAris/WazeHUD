@@ -51,7 +51,7 @@ WazeHUD-<phiên-bản>-WazeMod-<phiên-bản>-<mạch>-<ngày-giờ>-OTA.bin
 ```powershell
 . 'C:\Espressif\tools\Microsoft.v5.5.5.PowerShell_profile.ps1'
 esptool.py --chip esp32 --port COM12 --baud 460800 write_flash 0x0 `
-  .\WazeHUD-1.0.6-WazeMod-V12-ESP32-2432S028-YYYYMMDD-HHMMSS-Factory.bin
+  .\WazeHUD-1.0.7-WazeMod-V12-ESP32-2432S028-YYYYMMDD-HHMMSS-Factory.bin
 ```
 
 Thay `COM12` và tên file bằng giá trị thực tế trên máy.
