@@ -1,7 +1,7 @@
 idf_component_register(
     SRCS
         "app_main.cpp"
-        "bluetooth/ble_transport.cpp"
+        "serial/serial_transport.cpp"
         "protocol/hlp_core.c"
         "protocol/hlp_protocol.cpp"
         "protocol/hlp_decoder.cpp"
@@ -13,7 +13,7 @@ idf_component_register(
         "config/device_config.cpp"
         "system/system_status.cpp"
     INCLUDE_DIRS "."
-    REQUIRES bt esp_adc esp_lcd esp_driver_gpio esp_driver_ledc esp_driver_spi esp_hw_support nvs_flash json
+    REQUIRES esp_adc esp_lcd esp_driver_gpio esp_driver_ledc esp_driver_spi esp_driver_uart esp_hw_support esp_timer nvs_flash json
 )
 
 target_compile_options(${COMPONENT_LIB} PRIVATE

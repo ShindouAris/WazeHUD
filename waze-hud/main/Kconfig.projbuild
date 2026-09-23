@@ -23,6 +23,14 @@ config WAZE_HUD_DEFAULT_BRIGHTNESS
     help
         Must align with the HLP configuration slider's 5 percent step.
 
+config WAZE_HUD_SERIAL_BAUD
+    int "USB serial baud rate"
+    range 9600 921600
+    default 115200
+    help
+        UART0 baud rate used by HLP/1 through the onboard CH340 bridge.
+        Waze Mod must use the same value.
+
 config WAZE_HUD_HEADLESS_DIAGNOSTIC
     bool "Disable LCD/UI for watchdog isolation"
     default n

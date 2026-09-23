@@ -1,6 +1,6 @@
 # WazeHUD cho màn hình CYD 2.8 inch
 
-WazeHUD biến mạch ESP32-2432S028 (Cheap Yellow Display) thành màn hình dẫn đường phụ cho ô tô, nhận dữ liệu trực tiếp từ Waze Mod qua Bluetooth Low Energy (BLE).
+WazeHUD biến mạch ESP32-2432S028 (Cheap Yellow Display) thành màn hình dẫn đường phụ cho ô tô, nhận dữ liệu HLP/1 từ Waze Mod qua USB Serial.
 
 > [!IMPORTANT]
 > Branch này dành riêng cho mạch **ESP32-2432S028 dùng ESP32-WROOM-32 và màn ILI9341**. Không flash firmware này cho các bản CYD dùng ESP32-S3 hoặc controller màn hình khác.
@@ -13,7 +13,7 @@ WazeHUD biến mạch ESP32-2432S028 (Cheap Yellow Display) thành màn hình d�
 
 ## Tính năng chính
 
-- Kết nối không dây với Waze Mod qua BLE, tên thiết bị là `WazeHUD`.
+- Kết nối Waze Mod qua cổng CH340 USB-UART ở `115200 8N1`.
 - Hiển thị tốc độ xe, biển giới hạn tốc độ, hướng rẽ và khoảng cách tới lượt rẽ.
 - Hiển thị cảnh báo chính cùng hai cảnh báo tiếp theo.
 - Lane guidance tối đa 10 làn, có đánh dấu làn được khuyến nghị.
@@ -60,12 +60,12 @@ Nếu mạch không tự vào chế độ flash, giữ nút **BOOT**, nhấn r�
 
 ## Kết nối với Waze Mod
 
-1. Bật Bluetooth trên điện thoại.
-2. Cấp quyền thiết bị ở gần/Bluetooth cho Waze Mod nếu Android yêu cầu.
-3. Trong phần HUD Link của Waze Mod, chọn thiết bị `WazeHUD`.
-4. Mở một hành trình trong Waze.
+1. Dùng điện thoại hỗ trợ USB OTG/Host và cáp dữ liệu phù hợp.
+2. Cắm CYD vào điện thoại; cấp quyền USB cho Waze Mod khi Android hỏi.
+3. Trong HUD Link, chọn USB Serial và thiết bị CH340 theo VID/PID.
+4. Đặt `115200 baud`, `8N1`, sau đó mở một hành trình trong Waze.
 
-Khi kết nối thành công, firmware thương lượng HLP/1 ở tốc độ cập nhật 4 Hz. Không ghép đôi HUD bằng cổng COM Bluetooth của Windows.
+Khi kết nối thành công, firmware thương lượng HLP/1 ở tốc độ cập nhật 4 Hz. Không mở serial monitor đồng thời với Waze Mod. Android có thể hỏi lại quyền sau khi reset hoặc rút/cắm cáp.
 
 ## Hiểu trạng thái LED phía sau
 
@@ -86,7 +86,7 @@ Sau khi mạch khởi động xong, nút BOOT có ba thao tác:
 |---|---|
 | Nhấn một lần | Xoay màn hình 180° |
 | Nhấn đúp | Bật hoặc tắt lật gương HUD |
-| Nhấn giữ | Hiện trạng thái BLE của thiết bị |
+| Nhấn giữ | Hiện trạng thái USB của thiết bị |
 
 Lật gương và xoay 180° hoạt động độc lập, đồng thời được lưu lại sau khi mất nguồn.
 
@@ -123,7 +123,7 @@ Khi Waze Mod hỗ trợ `device_config`, HUD gửi lên chín thiết lập sau:
 Set-Location D:\Code\WazeHUD\waze-hud
 idf.py set-target esp32
 idf.py build
-idf.py -p COM12 -b 460800 flash monitor
+idf.py -p COM12 -b 460800 flash
 ```
 
 Thành phẩm app nằm tại:
@@ -169,7 +169,7 @@ Màn hình được giữ ở address space gốc 240×320. Firmware xoay các d
 | Màu đỏ/xanh bị đảo | Kiểm tra đúng controller ILI9341 và profile BGR |
 | Màn hình ngược | Nhấn BOOT một lần hoặc bật cấu hình xoay màn hình |
 | Hình bị lật | Nhấn đúp BOOT hoặc tắt `Phản chiếu HUD` |
-| Điện thoại không thấy HUD | Kiểm tra LED đang đổi màu, quyền Bluetooth và tên `WazeHUD` |
+| Điện thoại không thấy HUD | Kiểm tra USB OTG, cáp dữ liệu, quyền USB và thiết bị CH340 |
 | Đã kết nối nhưng chưa có dữ liệu | Bắt đầu hành trình trong Waze và kiểm tra LED xanh dương |
 
 ## Tài liệu kỹ thuật
@@ -182,7 +182,7 @@ Màn hình được giữ ở address space gốc 240×320. Firmware xoay các d
 
 ```text
 waze-hud/main/
-├── bluetooth/   # BLE GATT, advertising và reconnect
+├── serial/      # UART0 qua CH340, RX/TX HLP/1
 ├── protocol/    # HLP/1 framing, handshake và JSON decoder
 ├── state/       # Snapshot trạng thái HUD giữa các task
 ├── display/     # Layout, renderer, font và driver ILI9341
@@ -191,4 +191,4 @@ waze-hud/main/
 └── assets/      # Ảnh/font đã chuyển thành dữ liệu nhúng
 ```
 
-BLE callback chỉ đưa dữ liệu vào queue. Việc parse JSON, cập nhật state và truyền ảnh RGB565 tới LCD được thực hiện ngoài callback để tránh làm nghẽn Bluetooth.
+UART event chỉ đưa byte stream vào protocol task. Framing JSON-lines, cập nhật state và truyền ảnh RGB565 tới LCD được xử lý ngoài driver UART.

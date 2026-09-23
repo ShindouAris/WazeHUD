@@ -1,6 +1,5 @@
 #include "system/system_status.h"
 
-#include "bluetooth/ble_transport.h"
 #include "esp_adc/adc_cali.h"
 #include "esp_adc/adc_cali_scheme.h"
 #include "esp_adc/adc_oneshot.h"
@@ -8,6 +7,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/portmacro.h"
 #include "sdkconfig.h"
+#include "state/hud_state_store.h"
 #include <algorithm>
 #include <array>
 
@@ -146,19 +146,16 @@ bool SystemStatus::refresh() {
     uint16_t millivolts = 0;
     uint8_t percent = 0;
     const bool batteryPresent = sampleBattery(millivolts, percent);
-    int8_t rssi = 0;
-    const bool bleConnected = BleTransport::instance().readRssi(rssi);
+    const bool transportConnected = HudStateStore::instance().snapshot().connected;
 
     taskENTER_CRITICAL(&statusLock);
     const bool changed = current.batteryPresent != batteryPresent ||
-                         current.batteryPercent != percent ||
-                         current.bleConnected != bleConnected ||
-                         current.bleRssiDbm != rssi;
+                          current.batteryPercent != percent ||
+                          current.transportConnected != transportConnected;
     current.batteryPresent = batteryPresent;
     current.batteryPercent = percent;
     current.batteryMillivolts = millivolts;
-    current.bleConnected = bleConnected;
-    current.bleRssiDbm = rssi;
+    current.transportConnected = transportConnected;
     if (changed) ++current.generation;
     taskEXIT_CRITICAL(&statusLock);
     return changed;
@@ -171,10 +168,10 @@ void SystemStatus::show() {
     ++current.generation;
     const SystemStatusSnapshot logged = current;
     taskEXIT_CRITICAL(&statusLock);
-    ESP_LOGI(kTag, "Status shown: battery=%s %u%% %umV, BLE=%s RSSI=%d dBm",
-             logged.batteryPresent ? "present" : "unavailable", logged.batteryPercent,
-             logged.batteryMillivolts, logged.bleConnected ? "connected" : "disconnected",
-             static_cast<int>(logged.bleRssiDbm));
+    ESP_LOGI(kTag, "Status shown: battery=%s %u%% %umV, USB=%s",
+              logged.batteryPresent ? "present" : "unavailable", logged.batteryPercent,
+              logged.batteryMillivolts,
+              logged.transportConnected ? "connected" : "disconnected");
 }
 
 void SystemStatus::hide() {

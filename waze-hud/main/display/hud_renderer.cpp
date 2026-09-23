@@ -80,12 +80,8 @@ uint16_t alertDistanceColor(int distanceM, uint16_t normalColor) {
     return distanceM >= 0 && distanceM < 500 ? colors::Blue : normalColor;
 }
 
-uint16_t bleSignalColor(const SystemStatusSnapshot &status) {
-    if (!status.bleConnected) return colors::Muted;
-    if (status.bleRssiDbm >= -60) return colors::Green;
-    if (status.bleRssiDbm >= -75) return colors::Blue;
-    if (status.bleRssiDbm >= -85) return colors::Amber;
-    return colors::Red;
+uint16_t transportColor(const SystemStatusSnapshot &status) {
+    return status.transportConnected ? colors::Green : colors::Muted;
 }
 
 int64_t localClockMillis(const HudState &state) {
@@ -594,33 +590,8 @@ void HudRenderer::renderMainIndicators(Canvas &canvas, const Rect &region,
     }
 
     if (sameRegion(region, layout::Alerts)) {
-        // Compact Bluetooth rune and four RSSI bars in the upper-right corner.
-        constexpr int bluetoothX = 303;
-        const int top = mainY(2);
-        const int bottom = mainY(14);
-        const uint16_t color = bleSignalColor(systemStatus);
-        canvas.line(bluetoothX - region.x, top - region.y,
-                    bluetoothX - region.x, bottom - region.y, color, 1);
-        canvas.line(bluetoothX - region.x, top - region.y,
-                    bluetoothX + 4 - region.x, mainY(6) - region.y, color, 1);
-        canvas.line(bluetoothX + 4 - region.x, mainY(6) - region.y,
-                    bluetoothX - 3 - region.x, mainY(12) - region.y, color, 1);
-        canvas.line(bluetoothX - 3 - region.x, mainY(5) - region.y,
-                    bluetoothX + 4 - region.x, mainY(11) - region.y, color, 1);
-        canvas.line(bluetoothX + 4 - region.x, mainY(11) - region.y,
-                    bluetoothX - region.x, bottom - region.y, color, 1);
-
-        int signalBars = 0;
-        if (systemStatus.bleConnected) {
-            signalBars = systemStatus.bleRssiDbm >= -60 ? 3 :
-                         systemStatus.bleRssiDbm >= -75 ? 2 :
-                         systemStatus.bleRssiDbm >= -90 ? 1 : 0;
-        }
-        for (int bar = 0; bar < 3; ++bar) {
-            const int height = 3 + bar * 3;
-            canvas.fillRect(310 + bar * 4 - region.x, mainY(14) - height - region.y,
-                            2, height, bar < signalBars ? color : colors::Muted);
-        }
+        canvas.fontText(285 - region.x, mainY(0) - region.y, "USB",
+                        assets::kTextSmall, transportColor(systemStatus), 35, false);
     }
 }
 
@@ -670,42 +641,13 @@ void HudRenderer::renderSystemStatus(Canvas &canvas, const Rect &region,
                     assets::kTextMedium,
                     batteryColor, 215, false);
 
-    // Bluetooth rune plus four qualitative signal bars.
-    constexpr int bluetoothX = 49;
-    const int bluetoothTop = screenY(92);
-    const int bluetoothBottom = screenY(132);
-    const uint16_t bluetoothColor = bleSignalColor(systemStatus);
-    canvas.line(bluetoothX - region.x, bluetoothTop - region.y,
-                bluetoothX - region.x, bluetoothBottom - region.y, bluetoothColor, 3);
-    canvas.line(bluetoothX - region.x, bluetoothTop - region.y,
-                bluetoothX + 13 - region.x, screenY(103) - region.y, bluetoothColor, 3);
-    canvas.line(bluetoothX + 13 - region.x, screenY(103) - region.y,
-                bluetoothX - 10 - region.x, screenY(122) - region.y, bluetoothColor, 3);
-    canvas.line(bluetoothX - 10 - region.x, screenY(101) - region.y,
-                bluetoothX + 13 - region.x, screenY(122) - region.y, bluetoothColor, 3);
-    canvas.line(bluetoothX + 13 - region.x, screenY(122) - region.y,
-                bluetoothX - region.x, bluetoothBottom - region.y, bluetoothColor, 3);
-
-    int signalBars = 0;
-    if (systemStatus.bleConnected) {
-        signalBars = systemStatus.bleRssiDbm >= -55 ? 4 :
-                     systemStatus.bleRssiDbm >= -67 ? 3 :
-                     systemStatus.bleRssiDbm >= -78 ? 2 :
-                     systemStatus.bleRssiDbm >= -90 ? 1 : 0;
-    }
-    for (int bar = 0; bar < 4; ++bar) {
-        const int height = 5 + bar * 5;
-        canvas.fillRect(69 + bar * 6 - region.x, screenY(132) - height - region.y,
-                        4, height, bar < signalBars ? bluetoothColor : colors::Muted);
-    }
-    char bleText[28];
-    if (systemStatus.bleConnected)
-        std::snprintf(bleText, sizeof(bleText), "BLE %d dBm",
-                      static_cast<int>(systemStatus.bleRssiDbm));
-    else
-        std::snprintf(bleText, sizeof(bleText), "BLE CHƯA KẾT NỐI");
-    canvas.fontText(100 - region.x, screenY(102) - region.y, bleText,
-                    assets::kTextMedium, bluetoothColor, 210, false);
+    const uint16_t usbColor = transportColor(systemStatus);
+    canvas.fontText(25 - region.x, screenY(99) - region.y, "USB",
+                    assets::kTextLarge, usbColor, 65, true);
+    const char *usbText = systemStatus.transportConnected
+        ? "USB ĐÃ KẾT NỐI" : "USB CHƯA CÓ DỮ LIỆU";
+    canvas.fontText(100 - region.x, screenY(102) - region.y, usbText,
+                    assets::kTextMedium, usbColor, 210, false);
 }
 
 void HudRenderer::renderStatus(Canvas &canvas, const Rect &region, const HudState &state, const DeviceSettings &settings) {

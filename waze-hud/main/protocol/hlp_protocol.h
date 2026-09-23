@@ -19,8 +19,6 @@ private:
     static void sendEntry(const char *line, void *context);
     void run();
     void handleFrame(const char *line, size_t length);
-    void sendDeviceDeclaration();
-
     hlp_receiver_t receiver_{};
     HlpDecoder decoder_{};
     uint32_t stateUpdates_{0};
@@ -28,6 +26,7 @@ private:
     uint32_t lastOversized_{0};
     uint32_t lastMalformedUtf8_{0};
     TickType_t lastPeerActivity_{0};
+    bool sessionEstablished_{false};
 };
 
 }  // namespace waze_hud

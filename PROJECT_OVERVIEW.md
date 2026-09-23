@@ -1,16 +1,15 @@
 # Tổng quan nhanh dự án WazeHUD
 
-> Cập nhật: 2026-09-07 · Branch hiện tại: `2.8-in-CYD` (CYD mặc định) · ESP-IDF 5.5.5
+> Cập nhật: 2026-09-23 · Branch hiện tại: `2.8-in-CYD-USB` · ESP-IDF 5.5.5
 
-WazeHUD là firmware ESP32 nhận dữ liệu dẫn đường Waze qua BLE/HLP/1 và hiển thị HUD ô tô có độ trễ thấp. Mã nguồn ứng dụng nằm trong `waze-hud/`; assets gốc nằm trong `assets/` và được chuyển thành dữ liệu nhúng để ESP32 không phải giải mã PNG/font khi chạy.
+WazeHUD là firmware ESP32 nhận dữ liệu dẫn đường Waze qua USB Serial/HLP/1 và hiển thị HUD ô tô có độ trễ thấp. Mã nguồn ứng dụng nằm trong `waze-hud/`; assets gốc nằm trong `assets/` và được chuyển thành dữ liệu nhúng để ESP32 không phải giải mã PNG/font khi chạy.
 
 ## Trạng thái quan trọng
 
-- Branch `2.8-in-CYD` dành riêng cho ESP32-2432S028 và build mặc định cho target `esp32`.
+- Branch `2.8-in-CYD-USB` dành riêng cho ESP32-2432S028 và build mặc định cho target `esp32`.
 - Backend CYD dùng ILI9341, SPI2 40 MHz, BGR, `INVON` và xoay dirty stripe từ landscape native 320×240 sang panel native 240×320; font/icon giữ tỉ lệ pixel 1:1.
 - Board có flash 4 MB, không PSRAM; partition table mặc định đã thu về hai OTA slot 1856 KiB.
-- Build phần mềm đã thành công; màu, orientation, BLE và độ ổn định vẫn cần xác nhận trên phần cứng.
-- Mốc code hiện tại là commit `85853d6` (`fix: black screen`).
+- Build phần mềm USB đã thành công; Android OTG, CH340 và reconnect vẫn cần xác nhận trên phần cứng.
 
 ## Phần cứng và profile hiển thị
 
@@ -33,9 +32,9 @@ Chân LCD của CYD 2.8:
 
 ```text
 Điện thoại / Waze Mod
-        │ BLE GATT
+        │ USB Host / CH340 / UART0 115200 8N1
         ▼
-NimBLE transport ── bounded queue ──► HLP protocol task
+UART transport ── bounded queue ──► HLP protocol task
                                             │
                                   framing + JSON decode
                                             ▼
@@ -52,19 +51,19 @@ Các module chính:
 
 | Đường dẫn | Trách nhiệm |
 | --- | --- |
-| `main/bluetooth/` | BLE GATT, advertising, write/notify và reconnect |
+| `main/serial/` | UART0 qua CH340, byte-stream RX/TX và overflow reset |
 | `main/protocol/` | HLP framing, handshake, heartbeat và decode state |
 | `main/state/` | Snapshot HUD cố định dung lượng, truyền an toàn giữa task |
 | `main/display/` | Layout, renderer, font và driver LCD theo profile |
 | `main/config/` | Cấu hình động, validation và lưu NVS |
-| `main/system/` | Pin, RSSI Bluetooth và trạng thái hệ thống |
+| `main/system/` | Pin, trạng thái USB và trạng thái hệ thống |
 | `main/assets/` | RGB565, alpha mask và font đã generate |
 
-BLE callback chỉ sao chép dữ liệu vào queue. JSON, cập nhật state và truyền LCD chạy ngoài callback. Renderer chỉ vẽ lại vùng bị thay đổi, không redraw toàn màn hình theo mỗi state.
+UART event queue chuyển byte stream sang protocol task. JSON, cập nhật state và truyền LCD chạy ngoài driver. Renderer chỉ vẽ lại vùng bị thay đổi, không redraw toàn màn hình theo mỗi state.
 
 ## Khả năng hiện có
 
-- Nhận HLP/1 qua BLE, frame tối đa 512 byte, xử lý BLE chunk tùy ý.
+- Nhận HLP/1 qua USB Serial, frame tối đa 512 byte, xử lý chunk UART tùy ý.
 - Gửi `dev`, trả lời `ping/pong`, kiểm tra UTF-8 và bỏ frame lỗi an toàn.
 - Hiển thị tốc độ, biển giới hạn, hướng rẽ, vòng xuyến/lối ra, tối đa 10 làn đường, ETA, tên đường Việt Nam và cảnh báo; đầu mũi tên lane dùng asset Waze, hàng guidance nằm trên tên đường với ETA bên trái, còn `alrs` thứ 2/3 nằm ngay dưới cảnh báo chính.
 - Tên đường dài chạy marquee; đồng hồ có dấu `:` nhấp nháy theo giây.
@@ -72,7 +71,7 @@ BLE callback chỉ sao chép dữ liệu vào queue. JSON, cập nhật state v�
 - LED RGB phía sau đổi màu liên tục khi chưa kết nối, xanh dương khi chờ state, xanh lá ở tốc độ bình thường và nháy đỏ 2 Hz khi quá tốc độ.
 - Hỗ trợ mirror HUD (nhấn đúp BOOT), xoay 180° (nhấn đơn), độ sáng, theme, offset và ngưỡng quá tốc độ lưu trong NVS.
 - Cấu hình `Hien thi toc do` cho phép giữ tốc độ xe làm chính hoặc dùng biển giới hạn lớn làm chính với tốc độ xe nhỏ ở góc dưới-phải.
-- KEY hiển thị trạng thái pin/BLE và đổi hướng màn hình theo cấu hình phần cứng.
+- KEY hiển thị trạng thái pin/USB và đổi hướng màn hình theo cấu hình phần cứng.
 - Mock mode chạy UI không cần điện thoại.
 
 ## Build nhanh
@@ -114,7 +113,7 @@ Factory BIN phù hợp để cài mới hoặc khôi phục. OTA BIN không đư
 ## Việc cần xác nhận tiếp
 
 1. Flash mock profile lên đúng board ESP32-2432S028 để xác nhận màu BGR, orientation, backlight và software transpose.
-2. Kết nối Waze Mod để xác nhận BLE/HLP trong lúc LCD SPI hoạt động.
+2. Kết nối Waze Mod qua Android USB Host để xác nhận CH340/HLP trong lúc LCD SPI hoạt động.
 3. Chạy mock lâu để kiểm tra dirty-region, marquee và biến đổi mirror/rotation.
 
 ## Tài liệu liên quan

@@ -1,4 +1,4 @@
-#include "bluetooth/ble_transport.h"
+#include "serial/serial_transport.h"
 #include "config/device_config.h"
 #include "display/display_driver.h"
 #include "display/hud_renderer.h"
@@ -260,7 +260,7 @@ HudState baseMock() {
 }
 
 void mockTask(void *) {
-    ESP_LOGW(kTag, "Renderer mock mode enabled; BLE/HLP input is disabled");
+    ESP_LOGW(kTag, "Renderer mock mode enabled; USB/HLP input is disabled");
     vTaskDelay(pdMS_TO_TICKS(1200));
     constexpr uint32_t kScenarioCount = 12;
     uint32_t scenario = 0;
@@ -365,7 +365,7 @@ extern "C" void app_main() {
 #if CONFIG_WAZE_HUD_MOCK_MODE
     ESP_ERROR_CHECK(xTaskCreate(mockTask, "hud_mock", 4096, nullptr, 4, nullptr) == pdPASS ? ESP_OK : ESP_ERR_NO_MEM);
 #else
-    ESP_ERROR_CHECK(BleTransport::instance().init());
+    ESP_ERROR_CHECK(SerialTransport::instance().init());
     ESP_ERROR_CHECK(HlpProtocol::instance().start());
 #endif
 

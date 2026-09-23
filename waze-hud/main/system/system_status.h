@@ -10,15 +10,14 @@ struct SystemStatusSnapshot {
     bool batteryPresent{false};
     uint8_t batteryPercent{0};
     uint16_t batteryMillivolts{0};
-    bool bleConnected{false};
-    int8_t bleRssiDbm{0};
+    bool transportConnected{false};
     uint32_t generation{0};
 
     bool operator==(const SystemStatusSnapshot &other) const {
         return visible == other.visible && batteryPresent == other.batteryPresent &&
                batteryPercent == other.batteryPercent &&
                batteryMillivolts == other.batteryMillivolts &&
-               bleConnected == other.bleConnected && bleRssiDbm == other.bleRssiDbm &&
+                transportConnected == other.transportConnected &&
                generation == other.generation;
     }
     bool operator!=(const SystemStatusSnapshot &other) const { return !(*this == other); }

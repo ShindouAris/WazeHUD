@@ -62,6 +62,6 @@ Flash with `idf.py -p COM_PORT flash monitor`. The partition table has two
 
 1. Confirm the PCB marking is `ESP32-2432S028` and the module is ESP32-WROOM-32.
 2. Flash a mock build first and confirm black background, BGR colors and landscape orientation.
-3. Press BOOT once to rotate, twice to mirror, or hold it to show BLE status.
-4. Connect from Waze Mod and verify BLE updates while the display is active.
+3. Press BOOT once to rotate, twice to mirror, or hold it to show USB status.
+4. Connect Waze Mod through Android USB Host and verify HLP/1 updates while the display is active.
 5. Run marquee and rapid navigation changes for at least 15 minutes and watch for SPI stripes or watchdog resets.
