@@ -33,6 +33,11 @@ private:
     void renderAlerts(Canvas &canvas, const HudState &state, const DeviceSettings &settings);
     void renderGuidance(Canvas &canvas, const HudState &state, const DeviceSettings &settings);
     void renderStreet(Canvas &canvas, const HudState &state, const DeviceSettings &settings);
+    void renderV3Sign(Canvas &canvas, const HudState &state);
+    void renderV3Speed(Canvas &canvas, const HudState &state, const DeviceSettings &settings);
+    void renderV3Alert(Canvas &canvas, const HudState &state, const DeviceSettings &settings,
+                       bool primary);
+    void renderV3Bar(Canvas &canvas, const HudState &state, const DeviceSettings &settings);
 
     uint16_t *buffer_{nullptr};
     HudState previous_{};

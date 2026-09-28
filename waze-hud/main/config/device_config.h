@@ -3,15 +3,19 @@
 #include "cJSON.h"
 #include "esp_err.h"
 #include "freertos/FreeRTOS.h"
+#include "sdkconfig.h"
 #include <cstdint>
 
 namespace waze_hud {
 
 enum class UiTheme : uint8_t { Auto, Day, Night };
-enum class SpeedDisplayMode : uint8_t { CurrentPrimary, LimitPrimary };
+enum class SpeedDisplayMode : uint8_t { CurrentPrimary, LimitPrimary, NoNavigation };
 
 struct DeviceSettings {
     uint8_t brightness{70};
+#if CONFIG_WAZE_HUD_DISPLAY_CYD_28
+    bool autoBrightness{true};
+#endif
     UiTheme theme{UiTheme::Auto};
     SpeedDisplayMode speedDisplayMode{SpeedDisplayMode::CurrentPrimary};
     bool showStreet{true};

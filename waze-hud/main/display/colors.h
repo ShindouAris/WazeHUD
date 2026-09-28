@@ -8,8 +8,8 @@ constexpr uint16_t rgb565(uint8_t r, uint8_t g, uint8_t b) {
     return static_cast<uint16_t>(((r & 0xF8U) << 8U) | ((g & 0xFCU) << 3U) | (b >> 3U));
 }
 
-constexpr uint16_t Background = rgb565(3, 5, 7);
-constexpr uint16_t Panel = rgb565(8, 11, 14);
+constexpr uint16_t Background = rgb565(0, 0, 0);
+constexpr uint16_t Panel = rgb565(0, 0, 0);
 constexpr uint16_t Foreground = rgb565(238, 242, 244);
 constexpr uint16_t Muted = rgb565(128, 139, 145);
 constexpr uint16_t Red = rgb565(235, 39, 49);

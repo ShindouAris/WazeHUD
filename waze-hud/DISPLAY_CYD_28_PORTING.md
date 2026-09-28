@@ -19,7 +19,7 @@ used by known ESP-IDF examples is:
 | TFT CS | 15 | Boot strap pin; panel CS is already wired correctly |
 | TFT DC | 2 | Boot strap pin; do not add external pull resistors |
 | TFT reset | — | Tied to ESP32 EN |
-| Backlight | 21 | LEDC PWM, active high |
+| Backlight | 21 | LEDC PWM, active high on the tested board |
 | BOOT/status button | 0 | Single press rotates; double press mirrors; long press shows status |
 
 Other onboard devices are deliberately not initialized: XPT2046 touch uses

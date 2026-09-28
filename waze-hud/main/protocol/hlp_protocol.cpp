@@ -167,7 +167,7 @@ void HlpProtocol::sendDeviceDeclaration() {
         WAZE_HUD_FIRMWARE_VERSION "\","
         "\"proto\":[1],\"disp\":{\"w\":%d,\"h\":%d,\"color\":1},"
         "\"can\":[\"speed\",\"limit\",\"turn\",\"lanes\",\"street\",\"eta\",\"avgzone\",\"alerts\"],"
-        "\"want\":{\"rate\":4,\"fields\":[\"nav\",\"spd\",\"lim\",\"over\",\"trn\",\"trn2\","
+        "\"want\":{\"rate\":4,\"fields\":[\"nav\",\"spd\",\"lim\",\"min\",\"over\",\"trn\",\"trn2\","
         "\"dst\",\"exit\",\"lan\",\"st\",\"st2\",\"eta\",\"rmin\",\"rm\",\"rkm\",\"avg\",\"avgL\",\"avgR\","
         "\"avgP\",\"alr\",\"alrD\",\"alrV\",\"alrS\",\"alrM\",\"alrs\"]},\"transport\":\"ble\"}",
         layout::DeviceName, layout::PhysicalWidth, layout::PhysicalHeight);
