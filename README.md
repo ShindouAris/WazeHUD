@@ -71,9 +71,7 @@ Khi kết nối thành công, firmware thương lượng HLP/1 ở tốc độ c
 
 | Trạng thái | Màu LED |
 |---|---|
-| Chưa kết nối điện thoại | Đổi màu RGB liên tục |
-| Đã kết nối nhưng chưa có dữ liệu dẫn đường mới | Xanh dương |
-| Tốc độ bình thường | Xanh lá |
+| Chưa kết nối, chờ dữ liệu hoặc tốc độ bình thường | Tắt |
 | Vượt ngưỡng tốc độ | Nháy đỏ 2 Hz |
 
 Tốc độ bằng đúng giới hạn không bị tính là quá tốc. Cảnh báo chỉ bật khi tốc độ xe lớn hơn `giới hạn + offset` đã cấu hình.
@@ -92,11 +90,12 @@ Lật gương và xoay 180° hoạt động độc lập, đồng thời đượ
 
 ## Cấu hình từ Waze Mod
 
-Khi Waze Mod hỗ trợ `device_config`, HUD gửi lên chín thiết lập sau:
+Khi Waze Mod hỗ trợ `device_config`, HUD gửi lên mười thiết lập sau:
 
 | Thiết lập | Giá trị | Ý nghĩa |
 |---|---|---|
-| Độ sáng | 10–100%, bước 5% | Điều chỉnh đèn nền màn hình |
+| Độ sáng | 10–100%, bước 5% | Điều chỉnh đèn nền khi tắt tự động độ sáng |
+| Tự động độ sáng | Bật / Tắt | Dùng cảm biến ánh sáng CYD: tối 30%, sáng 70% |
 | Giao diện | Tự động / Ban ngày / Ban đêm | Chọn màu giao diện |
 | Hiển thị tốc độ | Tốc độ hiện tại / Biển giới hạn | Chọn thành phần tốc độ chính |
 | Hiện tên đường | Bật / Tắt | Ẩn hoặc hiện tên đường |
@@ -152,7 +151,7 @@ idf.py -B build-mock -D SDKCONFIG=sdkconfig.mock build
 | MOSI / MISO / SCLK | 13 / 12 / 14 |
 | LCD CS / DC | 15 / 2 |
 | LCD reset | Nối chung với EN |
-| Backlight PWM | GPIO21, active-high |
+| Backlight PWM | GPIO21, active-high trên board đã kiểm tra |
 | LED đỏ / xanh lá / xanh dương | GPIO4 / GPIO16 / GPIO17, active-low |
 | Nút BOOT | GPIO0, active-low |
 | Độ phân giải | 320×240 landscape |

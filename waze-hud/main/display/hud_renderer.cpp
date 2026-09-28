@@ -62,7 +62,11 @@ bool guidanceChanged(const HudState &a, const HudState &b) {
 }
 
 bool hasSettingsChanged(const DeviceSettings &a, const DeviceSettings &b) {
-    return a.brightness != b.brightness || a.theme != b.theme || a.showStreet != b.showStreet ||
+    return a.brightness != b.brightness ||
+#if CONFIG_WAZE_HUD_DISPLAY_CYD_28
+           a.autoBrightness != b.autoBrightness ||
+#endif
+           a.theme != b.theme || a.showStreet != b.showStreet ||
            a.speedDisplayMode != b.speedDisplayMode ||
            a.mirrorHud != b.mirrorHud || a.rotateDisplay != b.rotateDisplay ||
            a.overspeedOffsetKmh != b.overspeedOffsetKmh ||
@@ -390,6 +394,38 @@ void drawAlertIcon(Canvas &canvas, int cx, int cy, int radius, const AlertState 
                     colors::Amber,2*radius,true);
 }
 
+// Dominant alert: an active no-passing zone overrides the nearest alert.
+AlertState primaryAlert(const HudState &state) {
+    AlertState primary = state.nearestAlert;
+    if (state.noPassingZone) {
+        primary.kind = AlertKind::NoPassing;
+        primary.distanceM = state.noPassingRemainingM;
+        primary.valueKmh = 0;
+    }
+    return primary;
+}
+
+// First alert that is not already shown as the primary alert.
+AlertState secondaryAlert(const HudState &state) {
+    if (!state.noPassingZone)
+        return state.upcomingAlertCount > 0 ? state.upcomingAlerts[0] : AlertState{};
+    AlertState upcoming = state.nearestAlert;
+    if (upcoming.kind == AlertKind::NoPassing) upcoming = {};
+    for (uint8_t index = 0; upcoming.kind == AlertKind::None &&
+                            index < state.upcomingAlertCount; ++index) {
+        if (state.upcomingAlerts[index].kind != AlertKind::NoPassing)
+            upcoming = state.upcomingAlerts[index];
+    }
+    return upcoming == primaryAlert(state) ? AlertState{} : upcoming;
+}
+
+void drawRegionDividers(Canvas &canvas, const Rect &region) {
+    if (region.x + region.width < layout::Width)
+        canvas.fillRect(region.width - 1, 0, 1, region.height, colors::Muted);
+    if (region.y + region.height < layout::Height)
+        canvas.fillRect(0, region.height - 1, region.width, 1, colors::Muted);
+}
+
 void formatDistance(int meters, char *output, size_t capacity) {
     if (meters < 0) { output[0] = 0; return; }
     if (meters < 1000) std::snprintf(output, capacity, "%d M", meters);
@@ -420,7 +456,9 @@ void HudRenderer::render(const HudState &state, const DeviceSettings &settings,
         ? -1 : static_cast<int8_t>((currentClockMillis % 1000LL) < 500LL);
     clockActive_ = state.connected && state.hasProducerState && currentClockSecond != INT64_MIN;
     const bool streetChanged = firstFrame_ || !sameText(state.currentStreet, previous_.currentStreet);
-    const int availableStreetWidth = currentClockMinute != INT64_MIN ? 248 : 310;
+    const bool noNavigation = settings.speedDisplayMode == SpeedDisplayMode::NoNavigation;
+    const int availableStreetWidth = noNavigation ? layout::V3Street.width - 10
+        : currentClockMinute != INT64_MIN ? 248 : 310;
     Canvas metrics(buffer_, layout::Street.width, layout::Street.height);
     const int streetWidth = settings.showStreet
         ? metrics.fontTextWidth(displayStreet(state), assets::kTextMedium) : 0;
@@ -476,14 +514,21 @@ void HudRenderer::render(const HudState &state, const DeviceSettings &settings,
             renderRegion(layout::Limits,state,settings,systemStatus);
         }
     };
-    if (systemStatus.visible) {
-        if (systemStatusChanged || configChanged) {
-            renderRegion(layout::Maneuver,state,settings,systemStatus);
-            renderSpeedArea();
-            renderRegion(layout::Alerts,state,settings,systemStatus);
-            renderRegion(layout::Guidance,state,settings,systemStatus);
-            renderRegion(layout::Street,state,settings,systemStatus);
+    auto renderAll = [&]() {
+        if (noNavigation) {
+            for (const Rect &region : {layout::V3Sign, layout::V3Speed, layout::V3Alert,
+                                       layout::V3NextAlert, layout::V3Street, layout::V3Bar})
+                renderRegion(region,state,settings,systemStatus);
+            return;
         }
+        renderRegion(layout::Maneuver,state,settings,systemStatus);
+        renderSpeedArea();
+        renderRegion(layout::Alerts,state,settings,systemStatus);
+        renderRegion(layout::Guidance,state,settings,systemStatus);
+        renderRegion(layout::Street,state,settings,systemStatus);
+    };
+    if (systemStatus.visible) {
+        if (systemStatusChanged || configChanged) renderAll();
         previous_ = state;
         previousSettings_ = settings;
         previousSystemStatus_ = systemStatus;
@@ -493,12 +538,30 @@ void HudRenderer::render(const HudState &state, const DeviceSettings &settings,
     const bool systemStatusClosed = previousSystemStatus_.visible;
     bool streetRendered = false;
     if (systemStatusClosed || statusChanged || configChanged || !state.connected || !state.hasProducerState) {
-        renderRegion(layout::Maneuver,state,settings,systemStatus);
-        renderSpeedArea();
-        renderRegion(layout::Alerts,state,settings,systemStatus);
-        renderRegion(layout::Guidance,state,settings,systemStatus);
-        renderRegion(layout::Street,state,settings,systemStatus);
+        renderAll();
         streetRendered = true;
+    } else if (noNavigation) {
+        const bool speedChanged = state.speedKmh != previous_.speedKmh ||
+                                  state.speedLimitKmh != previous_.speedLimitKmh;
+        const bool limitChanged = state.speedLimitKmh != previous_.speedLimitKmh ||
+                                  state.hasMinimumSpeed != previous_.hasMinimumSpeed ||
+                                  state.minimumSpeedKmh != previous_.minimumSpeedKmh;
+        if (limitChanged) renderRegion(layout::V3Sign,state,settings,systemStatus);
+        if (speedChanged) {
+            renderRegion(layout::V3Speed,state,settings,systemStatus);
+            renderRegion(layout::V3Bar,state,settings,systemStatus);
+        }
+        if (alertsChanged(state, previous_)) {
+            renderRegion(layout::V3Alert,state,settings,systemStatus);
+            renderRegion(layout::V3NextAlert,state,settings,systemStatus);
+        } else if (systemStatusChanged) {
+            renderRegion(layout::V3Alert,state,settings,systemStatus);
+        }
+        if (streetChanged || settings.showStreet != previousSettings_.showStreet ||
+            marqueeFrameChanged) {
+            renderRegion(layout::V3Street,state,settings,systemStatus);
+            streetRendered = true;
+        }
     } else {
         if (maneuverChanged(state, previous_)) renderRegion(layout::Maneuver,state,settings,systemStatus);
         const bool speedChanged = state.speedKmh != previous_.speedKmh ||
@@ -553,7 +616,15 @@ void HudRenderer::renderRegion(const Rect &region, const HudState &state,
     else if (sameRegion(region, layout::Limits)) renderLimits(canvas,state,settings);
     else if (sameRegion(region, layout::Alerts)) renderAlerts(canvas,state,settings);
     else if (sameRegion(region, layout::Guidance)) renderGuidance(canvas,state,settings);
+    else if (sameRegion(region, layout::V3Sign)) renderV3Sign(canvas,state);
+    else if (sameRegion(region, layout::V3Speed)) renderV3Speed(canvas,state,settings);
+    else if (sameRegion(region, layout::V3Alert)) renderV3Alert(canvas,state,settings,true);
+    else if (sameRegion(region, layout::V3NextAlert)) renderV3Alert(canvas,state,settings,false);
+    else if (sameRegion(region, layout::V3Bar)) renderV3Bar(canvas,state,settings);
     else renderStreet(canvas,state,settings);
+    if (!systemStatus.visible && state.connected && state.hasProducerState &&
+        settings.speedDisplayMode == SpeedDisplayMode::NoNavigation)
+        drawRegionDividers(canvas, region);
     if (!systemStatus.visible && state.connected && state.hasProducerState)
         renderMainIndicators(canvas, region, systemStatus);
     const esp_err_t result = DisplayDriver::instance().drawRegion(physicalRegion, buffer_);
@@ -589,7 +660,7 @@ void HudRenderer::renderMainIndicators(Canvas &canvas, const Rect &region,
                         batteryColor, 38, false);
     }
 
-    if (sameRegion(region, layout::Alerts)) {
+    if (sameRegion(region, layout::Alerts) || sameRegion(region, layout::V3Alert)) {
         canvas.fontText(285 - region.x, mainY(0) - region.y, "USB",
                         assets::kTextSmall, transportColor(systemStatus), 35, false);
     }
@@ -742,12 +813,7 @@ void HudRenderer::renderLimits(Canvas &canvas, const HudState &state, const Devi
 void HudRenderer::renderAlerts(Canvas &canvas, const HudState &state, const DeviceSettings &settings) {
     canvas.clear(colors::Background);
     const bool activeZone = state.noPassingZone;
-    AlertState primary = state.nearestAlert;
-    if (activeZone) {
-        primary.kind = AlertKind::NoPassing;
-        primary.distanceM = state.noPassingRemainingM;
-        primary.valueKmh = 0;
-    }
+    const AlertState primary = primaryAlert(state);
     if (primary.kind != AlertKind::None) {
         drawAlertIcon(canvas,47,mainY(34),22,primary,true);
         char distance[16]; formatDistance(primary.distanceM,distance,sizeof(distance));
@@ -768,14 +834,8 @@ void HudRenderer::renderAlerts(Canvas &canvas, const HudState &state, const Devi
     }
 
     if (activeZone) {
-        AlertState upcoming = state.nearestAlert;
-        if (upcoming.kind == AlertKind::NoPassing) upcoming = {};
-        for (uint8_t index = 0; upcoming.kind == AlertKind::None &&
-                                index < state.upcomingAlertCount; ++index) {
-            if (state.upcomingAlerts[index].kind != AlertKind::NoPassing)
-                upcoming = state.upcomingAlerts[index];
-        }
-        if (upcoming.kind != AlertKind::None && !(upcoming == primary)) {
+        const AlertState upcoming = secondaryAlert(state);
+        if (upcoming.kind != AlertKind::None) {
             drawAlertIcon(canvas,47,mainY(105),13,upcoming,false);
             char distance[12]; formatDistance(upcoming.distanceM,distance,sizeof(distance));
             canvas.fontText(24,mainY(121),distance,assets::kTextSmall,
@@ -827,10 +887,11 @@ void HudRenderer::renderGuidance(Canvas &canvas, const HudState &state,
 
 void HudRenderer::renderStreet(Canvas &canvas, const HudState &state, const DeviceSettings &settings) {
     canvas.clear(colors::Panel);
-    const int textY = std::max(0, (layout::StreetHeight - assets::kTextMedium.lineHeight) / 2);
+    const int textY = std::max(0, (canvas.height() - assets::kTextMedium.lineHeight) / 2);
+    const bool noNavigation = settings.speedDisplayMode == SpeedDisplayMode::NoNavigation;
     const int64_t millis = localClockMillis(state);
     const int64_t second = millis == INT64_MIN ? INT64_MIN : millis / 1000LL;
-    const bool haveClock = second != INT64_MIN;
+    const bool haveClock = !noNavigation && second != INT64_MIN;
     if (settings.showStreet) {
         const char *street = displayStreet(state);
         if (marqueeActive_)
@@ -838,7 +899,7 @@ void HudRenderer::renderStreet(Canvas &canvas, const HudState &state, const Devi
                             foreground(settings),-1,false);
         else
             canvas.fontText(5,textY,street,assets::kTextMedium,foreground(settings),
-                            haveClock ? 248 : 310,true);
+                            noNavigation ? canvas.width() - 10 : haveClock ? 248 : 310,true);
     }
     if (haveClock) {
         // Clip marquee pixels before painting the independent clock column.
@@ -851,6 +912,95 @@ void HudRenderer::renderStreet(Canvas &canvas, const HudState &state, const Devi
                       normalizedMinute / 60,separator,normalizedMinute % 60);
         canvas.fontText(260,textY,clock,assets::kTextMedium,colors::Muted,55,true);
     }
+}
+
+void HudRenderer::renderV3Sign(Canvas &canvas, const HudState &state) {
+    canvas.clear(colors::Panel);
+    const int signX = canvas.width() / 2;
+    const int signY = canvas.height() * 9 / 20;
+    const int outerRadius = std::min(canvas.width() / 2 - 8, signY - 8);
+    const int innerRadius = outerRadius * 4 / 5;
+
+    if (state.speedLimitKmh > 0) {
+        canvas.fillCircle(signX, signY, outerRadius, colors::Red);
+        canvas.fillCircle(signX, signY, innerRadius, colors::White);
+        char limit[5];
+        std::snprintf(limit, sizeof(limit), "%d", state.speedLimitKmh);
+        canvas.fontText(signX - innerRadius, signY - assets::kNumberLarge.lineHeight / 2,
+                        limit, assets::kNumberLarge, colors::Black, innerRadius * 2, true);
+    } else if (assets::kNoSpeedCurrent.pixels && assets::kNoSpeedCurrent.alpha) {
+        canvas.colorBitmap(signX - assets::kNoSpeedCurrent.width / 2,
+                           signY - assets::kNoSpeedCurrent.height / 2,
+                           assets::kNoSpeedCurrent);
+    }
+
+    // Minimum-speed badge overlaps the lower-right edge of the limit sign.
+    if (state.hasMinimumSpeed) {
+        constexpr int radius = 24;
+        const int x = canvas.width() - radius - 3;
+        const int y = std::min(signY + outerRadius - radius / 2, canvas.height() - radius - 2);
+        canvas.fillCircle(x, y, radius + 2, colors::White);
+        canvas.fillCircle(x, y, radius, colors::Blue);
+        char value[5];
+        std::snprintf(value, sizeof(value), "%d", state.minimumSpeedKmh);
+        canvas.fontText(x - radius, y - assets::kNumberMedium.lineHeight / 2, value,
+                        assets::kNumberMedium, colors::White, radius * 2, true);
+    }
+}
+
+void HudRenderer::renderV3Speed(Canvas &canvas, const HudState &state,
+                                const DeviceSettings &settings) {
+    canvas.clear(colors::Panel);
+    const uint16_t color = firmwareOverspeed(state, settings) ? colors::Red : foreground(settings);
+    char speed[5]; std::snprintf(speed,sizeof(speed),"%d",std::clamp(state.speedKmh,0,999));
+    const int speedY = canvas.height() * 9 / 20 - assets::kNumberLarge.lineHeight / 2;
+    canvas.fontText(2,speedY,speed,assets::kNumberLarge,color,canvas.width()-4,true);
+    canvas.fontText(2,speedY + assets::kNumberLarge.lineHeight + 4,"km/h",assets::kTextSmall,
+                    colors::Muted,canvas.width()-4,true);
+}
+
+void HudRenderer::renderV3Alert(Canvas &canvas, const HudState &state,
+                                const DeviceSettings &settings, bool primary) {
+    canvas.clear(colors::Panel);
+    const AlertState alert = primary ? primaryAlert(state) : secondaryAlert(state);
+    if (alert.kind == AlertKind::None) return;
+    char distance[16]; formatDistance(alert.distanceM,distance,sizeof(distance));
+    if (primary) {
+        // Large icon above a large distance, centered in the cell.
+        const int iconY = canvas.height() * 2 / 5;
+        drawAlertIcon(canvas,canvas.width()/2,iconY,22,alert,true);
+        canvas.fontText(2,iconY + 34,distance,assets::kTextMedium,
+                        alertDistanceColor(alert.distanceM, foreground(settings)),
+                        canvas.width()-4,true);
+        return;
+    }
+    // Small icon on the left, distance on the right.
+    const int iconX = canvas.width() / 4 + 2;
+    const int centerY = canvas.height() / 2;
+    drawAlertIcon(canvas,iconX,centerY,13,alert,false);
+    canvas.fontText(canvas.width()/2,centerY - assets::kTextSmall.lineHeight/2,distance,
+                    assets::kTextSmall,alertDistanceColor(alert.distanceM, foreground(settings)),
+                    canvas.width()/2 - 2,true);
+}
+
+void HudRenderer::renderV3Bar(Canvas &canvas, const HudState &state,
+                              const DeviceSettings &settings) {
+    // Speed as a fraction of the limit; full red bar when over the limit.
+    canvas.clear(colors::Panel);
+    constexpr int marginX = 20;
+    constexpr int barHeight = 16;
+    const int x = marginX;
+    const int y = (canvas.height() - barHeight) / 2;
+    const int width = canvas.width() - 2 * marginX;
+    const uint16_t fg = foreground(settings);
+    canvas.fillRect(x, y, width, barHeight, fg);
+    canvas.fillRect(x + 2, y + 2, width - 4, barHeight - 4, colors::Background);
+    if (state.speedLimitKmh <= 0) return;
+    const bool over = firmwareOverspeed(state, settings);
+    const int inner = width - 6;
+    const int fill = over ? inner
+        : inner * std::clamp(state.speedKmh, 0, state.speedLimitKmh) / state.speedLimitKmh;
+    canvas.fillRect(x + 3, y + 3, fill, barHeight - 6, over ? colors::Red : colors::Blue);
 }
 
 }  // namespace waze_hud

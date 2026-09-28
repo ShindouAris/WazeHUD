@@ -68,7 +68,7 @@ UART event queue chuyển byte stream sang protocol task. JSON, cập nhật sta
 - Hiển thị tốc độ, biển giới hạn, hướng rẽ, vòng xuyến/lối ra, tối đa 10 làn đường, ETA, tên đường Việt Nam và cảnh báo; đầu mũi tên lane dùng asset Waze, hàng guidance nằm trên tên đường với ETA bên trái, còn `alrs` thứ 2/3 nằm ngay dưới cảnh báo chính.
 - Tên đường dài chạy marquee; đồng hồ có dấu `:` nhấp nháy theo giây.
 - Cảnh báo gần dưới 500 m đổi màu khoảng cách sang xanh.
-- LED RGB phía sau đổi màu liên tục khi chưa kết nối, xanh dương khi chờ state, xanh lá ở tốc độ bình thường và nháy đỏ 2 Hz khi quá tốc độ.
+- LED RGB phía sau tắt khi chưa quá tốc độ và nháy đỏ 2 Hz khi quá tốc độ.
 - Hỗ trợ mirror HUD (nhấn đúp BOOT), xoay 180° (nhấn đơn), độ sáng, theme, offset và ngưỡng quá tốc độ lưu trong NVS.
 - Cấu hình `Hien thi toc do` cho phép giữ tốc độ xe làm chính hoặc dùng biển giới hạn lớn làm chính với tốc độ xe nhỏ ở góc dưới-phải.
 - KEY hiển thị trạng thái pin/USB và đổi hướng màn hình theo cấu hình phần cứng.

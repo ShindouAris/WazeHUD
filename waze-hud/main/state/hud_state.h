@@ -135,9 +135,7 @@ struct LaneState {
     }
 };
 
-// Fixed-capacity snapshot copied across a length-one FreeRTOS queue. Optional
-// mock/future fields are represented by explicit presence flags and are never
-// populated by the HLP/1 decoder without a normative wire field.
+// Fixed-capacity snapshot copied across a length-one FreeRTOS queue.
 struct HudState {
     bool connected{false};
     bool signalStale{false};

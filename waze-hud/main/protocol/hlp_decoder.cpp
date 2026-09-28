@@ -227,8 +227,13 @@ bool HlpDecoder::decodeState(const cJSON *root, HudState &state) {
         }
     }
 
-    // Minimum-speed state has no HLP/1 field yet. Only the compile-time mock may populate it.
-    decoded.hasMinimumSpeed = false;
+    const cJSON *minimumSpeed = cJSON_GetObjectItemCaseSensitive(root, "min");
+    decoded.hasMinimumSpeed = cJSON_IsNumber(minimumSpeed) &&
+        std::isfinite(minimumSpeed->valuedouble) &&
+        minimumSpeed->valuedouble > 0 && minimumSpeed->valuedouble <= 999 &&
+        std::floor(minimumSpeed->valuedouble) == minimumSpeed->valuedouble;
+    if (decoded.hasMinimumSpeed)
+        decoded.minimumSpeedKmh = static_cast<int>(minimumSpeed->valuedouble);
     decoded.producerTimestamp = timestamp;
     state = decoded;
     lastTimestamp_ = timestamp;

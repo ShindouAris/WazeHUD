@@ -2,6 +2,10 @@
 #include "config/device_config.h"
 #include "display/display_driver.h"
 #include "display/hud_renderer.h"
+#include "sdkconfig.h"
+#if CONFIG_WAZE_HUD_DISPLAY_CYD_28
+#include "esp_adc/adc_oneshot.h"
+#endif
 #include "driver/gpio.h"
 #include "esp_check.h"
 #include "esp_heap_caps.h"
@@ -13,7 +17,6 @@
 #include "nvs_flash.h"
 #include "nvs.h"
 #include "protocol/hlp_protocol.h"
-#include "sdkconfig.h"
 #include "state/hud_state_store.h"
 #include "system/system_status.h"
 #include <algorithm>
@@ -33,6 +36,41 @@ constexpr TickType_t kLongPressTicks = pdMS_TO_TICKS(1200);
 constexpr TickType_t kDoublePressTicks = pdMS_TO_TICKS(350);
 
 #if CONFIG_WAZE_HUD_DISPLAY_CYD_28
+// CYD GPIO34 LDR: larger ADC readings mean less ambient light.
+constexpr uint8_t lightBrightness(int raw, uint8_t current) {
+    return raw >= 1800 ? 30 : raw <= 1400 ? 70 : current;
+}
+static_assert(lightBrightness(1800, 70) == 30 && lightBrightness(1400, 30) == 70 &&
+              lightBrightness(1600, 30) == 30 && lightBrightness(1600, 70) == 70);
+
+adc_oneshot_unit_handle_t initLightSensor() {
+    adc_oneshot_unit_handle_t adc = nullptr;
+    adc_oneshot_unit_init_cfg_t unit{};
+    unit.unit_id = ADC_UNIT_1;
+    if (adc_oneshot_new_unit(&unit, &adc) != ESP_OK) return nullptr;
+    adc_oneshot_chan_cfg_t channel{};
+    channel.atten = ADC_ATTEN_DB_0;
+    channel.bitwidth = ADC_BITWIDTH_DEFAULT;
+    if (adc_oneshot_config_channel(adc, ADC_CHANNEL_6, &channel) != ESP_OK) {
+        adc_oneshot_del_unit(adc);
+        return nullptr;
+    }
+    return adc;
+}
+
+bool sampleLight(adc_oneshot_unit_handle_t adc, int &raw) {
+    int sum = 0;
+    for (int i = 0; i < 8; ++i) {
+        int sample = 0;
+        if (adc_oneshot_read(adc, ADC_CHANNEL_6, &sample) != ESP_OK) return false;
+        sum += sample;
+    }
+    raw = sum / 8;
+    return true;
+}
+#endif
+
+#if CONFIG_WAZE_HUD_DISPLAY_CYD_28
 constexpr gpio_num_t kLedRed = GPIO_NUM_4;
 constexpr gpio_num_t kLedGreen = GPIO_NUM_16;
 constexpr gpio_num_t kLedBlue = GPIO_NUM_17;
@@ -47,11 +85,6 @@ void setRgbLed(bool red, bool green, bool blue) {
 
 void overspeedLedTask(void *) {
     bool illuminated = false;
-    uint8_t disconnectedPhase = 0;
-    constexpr bool palette[][3] = {
-        {true, false, false}, {true, true, false}, {false, true, false},
-        {false, true, true}, {false, false, true}, {true, false, true},
-    };
     for (;;) {
         const HudState state = HudStateStore::instance().snapshot();
         const DeviceSettings settings = DeviceConfig::instance().snapshot();
@@ -60,19 +93,11 @@ void overspeedLedTask(void *) {
         const bool overspeed = state.connected && state.hasProducerState &&
                                state.navigationActive && !state.signalStale &&
                                state.speedLimitKmh > 0 && state.speedKmh > threshold;
-        if (!state.connected) {
-            const bool *color = palette[disconnectedPhase % 6];
-            setRgbLed(color[0], color[1], color[2]);
-            ++disconnectedPhase;
-            illuminated = false;
-        } else if (!state.hasProducerState || state.signalStale) {
-            setRgbLed(false, false, true);
-            illuminated = false;
-        } else if (overspeed) {
+        if (overspeed) {
             illuminated = !illuminated;
             setRgbLed(illuminated, false, false);
         } else {
-            setRgbLed(false, true, false);
+            setRgbLed(false, false, false);
             illuminated = false;
         }
         vTaskDelay(kOverspeedBlinkTicks);
@@ -216,17 +241,57 @@ void uiTask(void *) {
         vTaskDelete(nullptr);
         return;
     }
+#if CONFIG_WAZE_HUD_DISPLAY_CYD_28
+    auto lightAdc = initLightSensor();
+    if (!lightAdc) ESP_LOGW(kTag, "LDR unavailable; using configured brightness");
+    uint8_t autoBrightness = 70;
+    TickType_t lastLightSample = xTaskGetTickCount();
+    int lightRaw = 0;
+    if (lightAdc && sampleLight(lightAdc, lightRaw)) {
+        autoBrightness = lightBrightness(lightRaw, autoBrightness);
+        ESP_LOGI(kTag, "LDR raw=%d, brightness=%u%%", lightRaw, autoBrightness);
+    }
+    auto settings = DeviceConfig::instance().snapshot();
+    if (lightAdc && settings.autoBrightness) settings.brightness = autoBrightness;
+    uint8_t renderedBrightness = settings.brightness;
+#endif
     HudState state = HudStateStore::instance().snapshot();
     const int64_t renderStartedUs = esp_timer_get_time();
+#if CONFIG_WAZE_HUD_DISPLAY_CYD_28
+    renderer.render(state, settings, SystemStatus::instance().snapshot());
+#else
     renderer.render(state, DeviceConfig::instance().snapshot(), SystemStatus::instance().snapshot());
+#endif
     ESP_LOGI(kTag, "Initial UI frame rendered in %lld ms",
              static_cast<long long>((esp_timer_get_time() - renderStartedUs) / 1000));
     for (;;) {
+#if CONFIG_WAZE_HUD_DISPLAY_CYD_28
+        const TickType_t timeout = renderer.animationActive() ? pdMS_TO_TICKS(80) : pdMS_TO_TICKS(1000);
+        const bool received = HudStateStore::instance().receive(state, timeout);
+        settings = DeviceConfig::instance().snapshot();
+        if (lightAdc && settings.autoBrightness &&
+            xTaskGetTickCount() - lastLightSample >= pdMS_TO_TICKS(1000)) {
+            lastLightSample = xTaskGetTickCount();
+            if (sampleLight(lightAdc, lightRaw)) {
+                const uint8_t next = lightBrightness(lightRaw, autoBrightness);
+                if (next != autoBrightness) {
+                    autoBrightness = next;
+                    ESP_LOGI(kTag, "LDR raw=%d, brightness=%u%%", lightRaw, autoBrightness);
+                }
+            }
+        }
+        if (lightAdc && settings.autoBrightness) settings.brightness = autoBrightness;
+        if (received || renderer.animationActive() || settings.brightness != renderedBrightness) {
+            renderer.render(state, settings, SystemStatus::instance().snapshot());
+            renderedBrightness = settings.brightness;
+        }
+#else
         const TickType_t timeout = renderer.animationActive() ? pdMS_TO_TICKS(80) : portMAX_DELAY;
         if (HudStateStore::instance().receive(state, timeout))
             renderer.render(state, DeviceConfig::instance().snapshot(), SystemStatus::instance().snapshot());
         else if (renderer.animationActive())
             renderer.render(state, DeviceConfig::instance().snapshot(), SystemStatus::instance().snapshot());
+#endif
     }
 }
 

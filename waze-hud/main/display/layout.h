@@ -71,6 +71,20 @@ constexpr Rect Guidance{0, MainHeight, Width, GuidanceHeight};
 constexpr Rect Street{0, MainHeight + GuidanceHeight, Width, StreetHeight};
 constexpr Rect Full{0, 0, Width, Height};
 
+// "V3" no-navigation mode: large limit sign + speed, two alert cells, street
+// and a speed/limit bar. Proportions follow the 320x240 reference mockup.
+constexpr int V3SplitX = Width * 216 / 320;
+constexpr int V3SignWidth = Width * 140 / 320;
+constexpr int V3MainHeight = Height * 160 / 240;
+constexpr int V3AlertHeight = Height * 136 / 240;
+constexpr int V3BarY = Height * 205 / 240;
+constexpr Rect V3Sign{0, 0, V3SignWidth, V3MainHeight};
+constexpr Rect V3Speed{V3SignWidth, 0, V3SplitX - V3SignWidth, V3MainHeight};
+constexpr Rect V3Alert{V3SplitX, 0, Width - V3SplitX, V3AlertHeight};
+constexpr Rect V3NextAlert{V3SplitX, V3AlertHeight, Width - V3SplitX, V3BarY - V3AlertHeight};
+constexpr Rect V3Street{0, V3MainHeight, V3SplitX, V3BarY - V3MainHeight};
+constexpr Rect V3Bar{0, V3BarY, Width, Height - V3BarY};
+
 constexpr int scaleCoordinate(int value, int logicalExtent, int physicalExtent) {
     return (value * physicalExtent + logicalExtent / 2) / logicalExtent;
 }
@@ -90,10 +104,14 @@ constexpr int regionPixels(const Rect &logical) {
 }
 
 constexpr int maxInt(int left, int right) { return left > right ? left : right; }
-constexpr int MaxRegionPixels = maxInt(
+constexpr int MaxV3RegionPixels = maxInt(
+    maxInt(maxInt(regionPixels(V3Sign), regionPixels(V3Speed)),
+           maxInt(regionPixels(V3Alert), regionPixels(V3NextAlert))),
+    maxInt(regionPixels(V3Street), regionPixels(V3Bar)));
+constexpr int MaxRegionPixels = maxInt(maxInt(
     maxInt(maxInt(regionPixels(Maneuver), regionPixels(Speed)), regionPixels(SpeedCluster)),
     maxInt(maxInt(regionPixels(Limits), regionPixels(Alerts)),
-           maxInt(regionPixels(Guidance), regionPixels(Street))));
+           maxInt(regionPixels(Guidance), regionPixels(Street)))), MaxV3RegionPixels);
 
 static_assert(physicalRect(Full).x == 0 && physicalRect(Full).y == 0,
               "Display viewport must start at the framebuffer origin");

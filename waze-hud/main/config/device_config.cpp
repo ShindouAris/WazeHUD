@@ -13,8 +13,12 @@ namespace waze_hud {
 namespace {
 constexpr char kTag[] = "CONFIG";
 constexpr char kNamespace[] = "hud_cfg";
+#if CONFIG_WAZE_HUD_DISPLAY_CYD_28
+constexpr int kItemCount = 10;
+#else
 constexpr int kItemCount = 9;
-constexpr uint32_t kSchemaRevision = 6;
+#endif
+constexpr uint32_t kSchemaRevision = 7;
 
 bool validBrightness(int value) {
     return value >= 10 && value <= 100 && ((value - 10) % 5) == 0;
@@ -71,6 +75,9 @@ esp_err_t saveSettings(const DeviceSettings &settings) {
     nvs_handle_t nvs;
     ESP_RETURN_ON_ERROR(nvs_open(kNamespace, NVS_READWRITE, &nvs), kTag, "NVS open failed");
     esp_err_t result = nvs_set_u8(nvs, "brightness", settings.brightness);
+#if CONFIG_WAZE_HUD_DISPLAY_CYD_28
+    if (result == ESP_OK) result = nvs_set_u8(nvs, "auto_bright", settings.autoBrightness ? 1 : 0);
+#endif
     if (result == ESP_OK) result = nvs_set_u8(nvs, "theme", static_cast<uint8_t>(settings.theme));
     if (result == ESP_OK) result = nvs_set_u8(nvs, "speed_mode", static_cast<uint8_t>(settings.speedDisplayMode));
     if (result == ESP_OK) result = nvs_set_u8(nvs, "street", settings.showStreet ? 1 : 0);
@@ -126,10 +133,13 @@ esp_err_t DeviceConfig::init() {
         if (validBrightness(byte)) active_.brightness = byte;
         else ESP_LOGW(kTag, "Ignoring stored brightness %u: not aligned to 5%% step", byte);
     }
+#if CONFIG_WAZE_HUD_DISPLAY_CYD_28
+    if (nvs_get_u8(nvs, "auto_bright", &byte) == ESP_OK) active_.autoBrightness = byte != 0;
+#endif
     if (nvs_get_u8(nvs, "theme", &byte) == ESP_OK && byte <= static_cast<uint8_t>(UiTheme::Night))
         active_.theme = static_cast<UiTheme>(byte);
     if (nvs_get_u8(nvs, "speed_mode", &byte) == ESP_OK &&
-        byte <= static_cast<uint8_t>(SpeedDisplayMode::LimitPrimary))
+        byte <= static_cast<uint8_t>(SpeedDisplayMode::NoNavigation))
         active_.speedDisplayMode = static_cast<SpeedDisplayMode>(byte);
     if (nvs_get_u8(nvs, "street", &byte) == ESP_OK) active_.showStreet = byte != 0;
     if (nvs_get_u8(nvs, "mirror", &byte) == ESP_OK) active_.mirrorHud = byte != 0;
@@ -215,12 +225,12 @@ void DeviceConfig::publishSchema(HlpSendLine send, void *context) {
     sendJson(root, send, context);
 
     root = schemaItem(settings.revision, "speed_display", "selection", "Hien thi toc do");
+    const char *speedValues[] = {"current_main", "limit_main", "no_nav"};
+    const char *speedLabels[] = {"Toc do hien tai", "Bien gioi han", "Khong dan duong"};
     cJSON_AddStringToObject(root, "value",
-        settings.speedDisplayMode == SpeedDisplayMode::LimitPrimary ? "limit_main" : "current_main");
+        speedValues[static_cast<uint8_t>(settings.speedDisplayMode)]);
     cJSON *options = cJSON_AddArrayToObject(root, "options");
-    const char *speedValues[] = {"current_main", "limit_main"};
-    const char *speedLabels[] = {"Toc do hien tai", "Bien gioi han"};
-    for (int i = 0; i < 2; ++i) {
+    for (int i = 0; i < 3; ++i) {
         cJSON *option = cJSON_CreateObject();
         cJSON_AddStringToObject(option, "value", speedValues[i]);
         cJSON_AddStringToObject(option, "label", speedLabels[i]);
@@ -232,6 +242,11 @@ void DeviceConfig::publishSchema(HlpSendLine send, void *context) {
     cJSON_AddNumberToObject(root, "value", settings.brightness);
     cJSON_AddNumberToObject(root, "min", 10); cJSON_AddNumberToObject(root, "max", 100);
     cJSON_AddNumberToObject(root, "step", 5); sendJson(root, send, context);
+
+#if CONFIG_WAZE_HUD_DISPLAY_CYD_28
+    root = schemaItem(settings.revision, "auto_brightness", "toggle", "Tu dong do sang");
+    cJSON_AddBoolToObject(root, "value", settings.autoBrightness); sendJson(root, send, context);
+#endif
 
     root = schemaItem(settings.revision, "theme", "selection", "Giao dien");
     const char *theme = settings.theme == UiTheme::Day ? "day" : settings.theme == UiTheme::Night ? "night" : "auto";
@@ -309,6 +324,11 @@ bool DeviceConfig::handleMessage(const cJSON *root, HlpSendLine send, void *cont
         if (std::strcmp(id->valuestring, "brightness") == 0) {
             bit = 1U << 0; valid = exactInteger(value, 10, 100, integer) && validBrightness(integer);
             if (valid) pending.draft.brightness = static_cast<uint8_t>(integer);
+#if CONFIG_WAZE_HUD_DISPLAY_CYD_28
+        } else if (std::strcmp(id->valuestring, "auto_brightness") == 0) {
+            bit = 1U << 9; valid = cJSON_IsBool(value);
+            if (valid) pending.draft.autoBrightness = cJSON_IsTrue(value);
+#endif
         } else if (std::strcmp(id->valuestring, "theme") == 0) {
             bit = 1U << 1; valid = cJSON_IsString(value);
             if (valid && std::strcmp(value->valuestring, "auto") == 0) pending.draft.theme = UiTheme::Auto;
@@ -334,6 +354,8 @@ bool DeviceConfig::handleMessage(const cJSON *root, HlpSendLine send, void *cont
                 pending.draft.speedDisplayMode = SpeedDisplayMode::CurrentPrimary;
             else if (valid && std::strcmp(value->valuestring, "limit_main") == 0)
                 pending.draft.speedDisplayMode = SpeedDisplayMode::LimitPrimary;
+            else if (valid && std::strcmp(value->valuestring, "no_nav") == 0)
+                pending.draft.speedDisplayMode = SpeedDisplayMode::NoNavigation;
             else valid = false;
         } else valid = false;
         if ((pending.mask & bit) != 0) valid = false;
