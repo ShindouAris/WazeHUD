@@ -174,6 +174,8 @@ extern const ColorBitmap kAlertNoLeftAndUTurnLarge;
 extern const ColorBitmap kAlertNoLeftAndUTurnSmall;
 extern const ColorBitmap kAlertNoRightAndUTurnLarge;
 extern const ColorBitmap kAlertNoRightAndUTurnSmall;
+extern const ColorBitmap kAlertTrafficLightLarge;
+extern const ColorBitmap kAlertTrafficLightSmall;
 extern const ColorBitmap kAlertTrafficJam1Large;
 extern const ColorBitmap kAlertTrafficJam1Small;
 extern const ColorBitmap kAlertTrafficJam2Large;
