@@ -110,6 +110,7 @@ enum class AlertKind : uint8_t {
     CarNoLeftTurn = 72,
     CarNoRightTurn = 73,
     CarNoUTurn = 74,
+    TrafficLight = 75,
 };
 
 struct AlertState {

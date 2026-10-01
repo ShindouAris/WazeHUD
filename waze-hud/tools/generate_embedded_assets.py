@@ -94,6 +94,7 @@ ALERT_ASSETS = {
     "AlertPersonalSafety": "alerts/bigpin_personal_safety_a.png",
     "AlertNoLeftAndUTurn": "alerts/no_left_and_u_turn.png",
     "AlertNoRightAndUTurn": "alerts/no_right_and_u_turn.png",
+    "AlertTrafficLight": "alerts/bigpin_traffic_light.png",
 }
 
 TRAFFIC_JAM_ASSETS = {
@@ -125,6 +126,7 @@ ALERT_CODE_ASSET = {
     66: "AlertNoLeftAndUTurn", 69: "AlertNoLeftAndUTurn",
     70: "AlertNoRightAndUTurn", 71: "AlertNoRightAndUTurn",
     72: "AlertNoLeftTurn", 73: "AlertNoRightTurn", 74: "AlertNoUTurn",
+    75: "AlertTrafficLight",
 }
 
 VIETNAMESE = (
