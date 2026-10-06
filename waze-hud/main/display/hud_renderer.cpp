@@ -65,6 +65,9 @@ bool hasSettingsChanged(const DeviceSettings &a, const DeviceSettings &b) {
     return a.brightness != b.brightness ||
 #if CONFIG_WAZE_HUD_DISPLAY_CYD_28
            a.autoBrightness != b.autoBrightness ||
+           a.invertColor != b.invertColor ||
+           a.colorBgr != b.colorBgr ||
+           a.backlightPin != b.backlightPin ||
 #endif
            a.theme != b.theme || a.showStreet != b.showStreet ||
            a.speedDisplayMode != b.speedDisplayMode ||
@@ -503,6 +506,11 @@ void HudRenderer::render(const HudState &state, const DeviceSettings &settings,
             settings.mirrorHud, settings.rotateDisplay);
         if (orientationResult != ESP_OK)
             ESP_LOGE(kTag, "HUD orientation update failed: %s", esp_err_to_name(orientationResult));
+#if CONFIG_WAZE_HUD_DISPLAY_CYD_28
+        DisplayDriver::instance().setInvertColor(settings.invertColor);
+        DisplayDriver::instance().setColorBgr(settings.colorBgr);
+        DisplayDriver::instance().setBacklightPin(settings.backlightPin);
+#endif
     }
     const bool systemStatusChanged = firstFrame_ || systemStatus != previousSystemStatus_;
     const bool limitPrimary = settings.speedDisplayMode == SpeedDisplayMode::LimitPrimary;
