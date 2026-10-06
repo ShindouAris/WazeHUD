@@ -74,6 +74,8 @@ bool hasSettingsChanged(const DeviceSettings &a, const DeviceSettings &b) {
            a.speedDisplayMode != b.speedDisplayMode ||
            a.mirrorHud != b.mirrorHud || a.rotateDisplay != b.rotateDisplay ||
            a.overspeedOffsetKmh != b.overspeedOffsetKmh ||
+           a.speedOffsetKmh != b.speedOffsetKmh ||
+           a.speedOffsetPercent != b.speedOffsetPercent ||
            a.offsetX != b.offsetX || a.offsetY != b.offsetY || a.revision != b.revision;
 }
 
@@ -81,7 +83,8 @@ bool firmwareOverspeed(const HudState &state, const DeviceSettings &settings) {
     if (state.speedLimitKmh <= 0) return false;
     const int threshold = std::max(0, state.speedLimitKmh +
                                      static_cast<int>(settings.overspeedOffsetKmh));
-    return state.speedKmh > threshold;
+    const int effectiveSpeed = adjustedSpeed(state.speedKmh, settings);
+    return effectiveSpeed > threshold;
 }
 
 uint16_t alertDistanceColor(int distanceM, uint16_t normalColor) {
@@ -556,7 +559,9 @@ void HudRenderer::render(const HudState &state, const DeviceSettings &settings,
         renderAll();
         streetRendered = true;
     } else if (noNavigation) {
-        const bool speedChanged = state.speedKmh != previous_.speedKmh ||
+        const int currSpeed = adjustedSpeed(state.speedKmh, settings);
+        const int prevSpeed = adjustedSpeed(previous_.speedKmh, previousSettings_);
+        const bool speedChanged = currSpeed != prevSpeed ||
                                   state.speedLimitKmh != previous_.speedLimitKmh;
         const bool limitChanged = state.speedLimitKmh != previous_.speedLimitKmh ||
                                   state.hasMinimumSpeed != previous_.hasMinimumSpeed ||
@@ -579,7 +584,9 @@ void HudRenderer::render(const HudState &state, const DeviceSettings &settings,
         }
     } else {
         if (maneuverChanged(state, previous_)) renderRegion(layout::Maneuver,state,settings,systemStatus);
-        const bool speedChanged = state.speedKmh != previous_.speedKmh ||
+        const int currSpeed = adjustedSpeed(state.speedKmh, settings);
+        const int prevSpeed = adjustedSpeed(previous_.speedKmh, previousSettings_);
+        const bool speedChanged = currSpeed != prevSpeed ||
                                   state.speedLimitKmh != previous_.speedLimitKmh;
         const bool limitChanged = state.speedLimitKmh != previous_.speedLimitKmh ||
                                   state.hasMinimumSpeed != previous_.hasMinimumSpeed ||
@@ -819,7 +826,8 @@ void HudRenderer::renderManeuver(Canvas &canvas, const HudState &state, const De
 void HudRenderer::renderSpeed(Canvas &canvas, const HudState &state, const DeviceSettings &settings) {
     canvas.clear(colors::Background);
     const uint16_t color = firmwareOverspeed(state, settings) ? colors::Red : foreground(settings);
-    char speed[5]; std::snprintf(speed,sizeof(speed),"%d",std::clamp(state.speedKmh,0,999));
+    const int effectiveSpeed = adjustedSpeed(state.speedKmh, settings);
+    char speed[12]; std::snprintf(speed, sizeof(speed), "%d", std::clamp(effectiveSpeed, 0, 999));
     canvas.fontText(2,mainY(26),speed,assets::kNumberLarge,color,canvas.width()-4,true);
     canvas.fontText(2,mainY(90),"km/h",assets::kTextSmall,colors::Muted,canvas.width()-4,true);
 }
@@ -847,8 +855,9 @@ void HudRenderer::renderLimitPrimary(Canvas &canvas, const HudState &state,
                            assets::kNoSpeedCurrent);
     }
 
-    char speed[5];
-    std::snprintf(speed, sizeof(speed), "%d", std::clamp(state.speedKmh, 0, 999));
+    const int effectiveSpeed = adjustedSpeed(state.speedKmh, settings);
+    char speed[12];
+    std::snprintf(speed, sizeof(speed), "%d", std::clamp(effectiveSpeed, 0, 999));
     const uint16_t speedColor = firmwareOverspeed(state, settings)
         ? colors::Red : foreground(settings);
     canvas.fontText(96, 101, speed, assets::kNumberMedium,
@@ -1023,7 +1032,8 @@ void HudRenderer::renderV3Speed(Canvas &canvas, const HudState &state,
                                 const DeviceSettings &settings) {
     canvas.clear(colors::Panel);
     const uint16_t color = firmwareOverspeed(state, settings) ? colors::Red : foreground(settings);
-    char speed[5]; std::snprintf(speed,sizeof(speed),"%d",std::clamp(state.speedKmh,0,999));
+    const int effectiveSpeed = adjustedSpeed(state.speedKmh, settings);
+    char speed[12]; std::snprintf(speed, sizeof(speed), "%d", std::clamp(effectiveSpeed, 0, 999));
     const int speedY = canvas.height() * 9 / 20 - assets::kNumberLarge.lineHeight / 2;
     canvas.fontText(2,speedY,speed,assets::kNumberLarge,color,canvas.width()-4,true);
     canvas.fontText(2,speedY + assets::kNumberLarge.lineHeight + 4,"km/h",assets::kTextSmall,
@@ -1069,8 +1079,9 @@ void HudRenderer::renderV3Bar(Canvas &canvas, const HudState &state,
     if (state.speedLimitKmh <= 0) return;
     const bool over = firmwareOverspeed(state, settings);
     const int inner = width - 6;
+    const int effectiveSpeed = adjustedSpeed(state.speedKmh, settings);
     const int fill = over ? inner
-        : inner * std::clamp(state.speedKmh, 0, state.speedLimitKmh) / state.speedLimitKmh;
+        : inner * std::clamp(effectiveSpeed, 0, state.speedLimitKmh) / state.speedLimitKmh;
     canvas.fillRect(x + 3, y + 3, fill, barHeight - 6, over ? colors::Red : colors::Blue);
 }
 
