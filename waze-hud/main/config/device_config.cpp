@@ -14,11 +14,11 @@ namespace {
 constexpr char kTag[] = "CONFIG";
 constexpr char kNamespace[] = "hud_cfg";
 #if CONFIG_WAZE_HUD_DISPLAY_CYD_28
-constexpr int kItemCount = 13;
+constexpr int kItemCount = 14;
 #else
 constexpr int kItemCount = 9;
 #endif
-constexpr uint32_t kSchemaRevision = 8;
+constexpr uint32_t kSchemaRevision = 9;
 
 bool validBrightness(int value) {
     return value >= 10 && value <= 100 && ((value - 10) % 5) == 0;
@@ -80,6 +80,7 @@ esp_err_t saveSettings(const DeviceSettings &settings) {
     if (result == ESP_OK) result = nvs_set_u8(nvs, "invert_color", settings.invertColor ? 1 : 0);
     if (result == ESP_OK) result = nvs_set_u8(nvs, "color_bgr", settings.colorBgr ? 1 : 0);
     if (result == ESP_OK) result = nvs_set_u8(nvs, "bl_pin", settings.backlightPin);
+    if (result == ESP_OK) result = nvs_set_u8(nvs, "over_border", settings.overspeedBorder ? 1 : 0);
 #endif
     if (result == ESP_OK) result = nvs_set_u8(nvs, "theme", static_cast<uint8_t>(settings.theme));
     if (result == ESP_OK) result = nvs_set_u8(nvs, "speed_mode", static_cast<uint8_t>(settings.speedDisplayMode));
@@ -141,6 +142,7 @@ esp_err_t DeviceConfig::init() {
     if (nvs_get_u8(nvs, "invert_color", &byte) == ESP_OK) active_.invertColor = byte != 0;
     if (nvs_get_u8(nvs, "color_bgr", &byte) == ESP_OK) active_.colorBgr = byte != 0;
     if (nvs_get_u8(nvs, "bl_pin", &byte) == ESP_OK && (byte == 21 || byte == 27)) active_.backlightPin = byte;
+    if (nvs_get_u8(nvs, "over_border", &byte) == ESP_OK) active_.overspeedBorder = byte != 0;
 #endif
     if (nvs_get_u8(nvs, "theme", &byte) == ESP_OK && byte <= static_cast<uint8_t>(UiTheme::Night))
         active_.theme = static_cast<UiTheme>(byte);
@@ -271,6 +273,9 @@ void DeviceConfig::publishSchema(HlpSendLine send, void *context) {
     cJSON_AddStringToObject(opt2, "label", "GPIO 27 (CYD 2.4\" một số bản)");
     cJSON_AddItemToArray(options, opt2);
     sendJson(root, send, context);
+
+    root = schemaItem(settings.revision, "overspeed_border", "toggle", "Viền đỏ khi quá tốc");
+    cJSON_AddBoolToObject(root, "value", settings.overspeedBorder); sendJson(root, send, context);
 #endif
 
     root = schemaItem(settings.revision, "theme", "selection", "Giao diện");
@@ -368,6 +373,9 @@ bool DeviceConfig::handleMessage(const cJSON *root, HlpSendLine send, void *cont
             } else {
                 valid = false;
             }
+        } else if (std::strcmp(id->valuestring, "overspeed_border") == 0) {
+            bit = 1U << 13; valid = cJSON_IsBool(value);
+            if (valid) pending.draft.overspeedBorder = cJSON_IsTrue(value);
 #endif
         } else if (std::strcmp(id->valuestring, "theme") == 0) {
             bit = 1U << 1; valid = cJSON_IsString(value);

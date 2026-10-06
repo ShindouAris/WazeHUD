@@ -68,6 +68,7 @@ bool hasSettingsChanged(const DeviceSettings &a, const DeviceSettings &b) {
            a.invertColor != b.invertColor ||
            a.colorBgr != b.colorBgr ||
            a.backlightPin != b.backlightPin ||
+           a.overspeedBorder != b.overspeedBorder ||
 #endif
            a.theme != b.theme || a.showStreet != b.showStreet ||
            a.speedDisplayMode != b.speedDisplayMode ||
@@ -450,6 +451,7 @@ esp_err_t HudRenderer::init() {
 
 void HudRenderer::render(const HudState &state, const DeviceSettings &settings,
                          const SystemStatusSnapshot &systemStatus) {
+    anyRegionRenderedThisFrame_ = false;
     const int64_t currentClockMillis = localClockMillis(state);
     const int64_t currentClockSecond = currentClockMillis == INT64_MIN
         ? INT64_MIN : currentClockMillis / 1000LL;
@@ -540,6 +542,7 @@ void HudRenderer::render(const HudState &state, const DeviceSettings &settings,
         previous_ = state;
         previousSettings_ = settings;
         previousSystemStatus_ = systemStatus;
+        renderOverspeedBorder(state, settings, anyRegionRenderedThisFrame_);
         firstFrame_ = false;
         return;
     }
@@ -606,12 +609,14 @@ void HudRenderer::render(const HudState &state, const DeviceSettings &settings,
     renderedClockMinute_ = currentClockMinute;
     renderedClockPhase_ = currentClockPhase;
     if (streetRendered) marqueeRenderedOffset_ = marqueeOffset_;
+    renderOverspeedBorder(state, settings, anyRegionRenderedThisFrame_);
     firstFrame_ = false;
 }
 
 void HudRenderer::renderRegion(const Rect &region, const HudState &state,
                                const DeviceSettings &settings,
                                const SystemStatusSnapshot &systemStatus) {
+    anyRegionRenderedThisFrame_ = true;
     const Rect physicalRegion = layout::physicalRect(region);
     Canvas canvas(buffer_, physicalRegion.width, physicalRegion.height,
                   region.width, region.height);
@@ -1009,6 +1014,89 @@ void HudRenderer::renderV3Bar(Canvas &canvas, const HudState &state,
     const int fill = over ? inner
         : inner * std::clamp(state.speedKmh, 0, state.speedLimitKmh) / state.speedLimitKmh;
     canvas.fillRect(x + 3, y + 3, fill, barHeight - 6, over ? colors::Red : colors::Blue);
+}
+
+namespace {
+constexpr int16_t kBorderThickness = 3;
+// Edge A: Cạnh trên (Top)
+constexpr Rect kEdgeA{0, 0, layout::Width, kBorderThickness};
+// Edge D: Cạnh dưới (Bottom)
+constexpr Rect kEdgeD{0, static_cast<int16_t>(layout::Height - kBorderThickness),
+                      layout::Width, kBorderThickness};
+// Edge C: Cạnh trái (Left)
+constexpr Rect kEdgeC{0, kBorderThickness, kBorderThickness,
+                      static_cast<int16_t>(layout::Height - 2 * kBorderThickness)};
+// Edge B: Cạnh phải (Right)
+constexpr Rect kEdgeB{static_cast<int16_t>(layout::Width - kBorderThickness), kBorderThickness,
+                      kBorderThickness, static_cast<int16_t>(layout::Height - 2 * kBorderThickness)};
+
+constexpr uint8_t kMaskEdgeA = 1U << 0;
+constexpr uint8_t kMaskEdgeB = 1U << 1;
+constexpr uint8_t kMaskEdgeD = 1U << 2;
+constexpr uint8_t kMaskEdgeC = 1U << 3;
+}  // namespace
+
+void HudRenderer::drawBorderEdge(const Rect &edge, uint16_t color) {
+    const Rect physical = layout::physicalRect(edge);
+    const int pixelCount = physical.width * physical.height;
+    std::fill(buffer_, buffer_ + pixelCount, color);
+    DisplayDriver::instance().drawRegion(physical, buffer_);
+}
+
+void HudRenderer::renderOverspeedBorder(const HudState &state, const DeviceSettings &settings, bool forceRedraw) {
+    const bool isOverspeed =
+#if CONFIG_WAZE_HUD_DISPLAY_CYD_28
+        settings.overspeedBorder &&
+#endif
+        !SystemStatus::instance().snapshot().visible &&
+        state.connected && state.hasProducerState &&
+        (state.overSpeed || firmwareOverspeed(state, settings));
+
+    if (!isOverspeed) {
+        if (previousBorderMask_ != 0) {
+            if (previousBorderMask_ & kMaskEdgeA) drawBorderEdge(kEdgeA, 0x0000);
+            if (previousBorderMask_ & kMaskEdgeB) drawBorderEdge(kEdgeB, 0x0000);
+            if (previousBorderMask_ & kMaskEdgeD) drawBorderEdge(kEdgeD, 0x0000);
+            if (previousBorderMask_ & kMaskEdgeC) drawBorderEdge(kEdgeC, 0x0000);
+            previousBorderMask_ = 0;
+        }
+        overspeedBorderActive_ = false;
+        return;
+    }
+
+    overspeedBorderActive_ = true;
+
+    // Chu kỳ 500ms (2 Hz):
+    // 0..199ms: Segment 1 (C -> A -> B) sáng đỏ (Trái, Trên, Phải), D tắt
+    // 200..249ms: Nghỉ tắt (dark gap)
+    // 250..449ms: Segment 2 (B -> D -> C) sáng đỏ (Phải, Dưới, Trái), A tắt
+    // 450..499ms: Nghỉ tắt (dark gap)
+    const uint64_t nowMs = static_cast<uint64_t>(esp_timer_get_time() / 1000);
+    const uint64_t phase = nowMs % 500ULL;
+    uint8_t targetMask = 0;
+
+    if (phase < 200ULL) {
+        targetMask = kMaskEdgeC | kMaskEdgeA | kMaskEdgeB;
+    } else if (phase >= 250ULL && phase < 450ULL) {
+        targetMask = kMaskEdgeB | kMaskEdgeD | kMaskEdgeC;
+    } else {
+        targetMask = 0;
+    }
+
+    auto updateEdge = [this, targetMask, forceRedraw](uint8_t bit, const Rect &edge) {
+        const bool shouldBeOn = (targetMask & bit) != 0;
+        const bool wasOn = (previousBorderMask_ & bit) != 0;
+        if (shouldBeOn != wasOn || (shouldBeOn && forceRedraw)) {
+            drawBorderEdge(edge, shouldBeOn ? colors::Red : 0x0000);
+        }
+    };
+
+    updateEdge(kMaskEdgeA, kEdgeA);
+    updateEdge(kMaskEdgeB, kEdgeB);
+    updateEdge(kMaskEdgeD, kEdgeD);
+    updateEdge(kMaskEdgeC, kEdgeC);
+
+    previousBorderMask_ = targetMask;
 }
 
 }  // namespace waze_hud
