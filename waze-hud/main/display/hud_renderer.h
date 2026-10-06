@@ -15,7 +15,7 @@ public:
     esp_err_t init();
     void render(const HudState &state, const DeviceSettings &settings,
                 const SystemStatusSnapshot &systemStatus);
-    bool animationActive() const { return marqueeActive_ || clockActive_; }
+    bool animationActive() const { return marqueeActive_ || clockActive_ || overspeedBorderActive_; }
 
 private:
     void renderRegion(const Rect &region, const HudState &state, const DeviceSettings &settings,
@@ -38,6 +38,8 @@ private:
     void renderV3Alert(Canvas &canvas, const HudState &state, const DeviceSettings &settings,
                        bool primary);
     void renderV3Bar(Canvas &canvas, const HudState &state, const DeviceSettings &settings);
+    void renderOverspeedBorder(const HudState &state, const DeviceSettings &settings, bool forceRedraw);
+    void drawBorderEdge(const Rect &edge, uint16_t color);
 
     uint16_t *buffer_{nullptr};
     HudState previous_{};
@@ -52,6 +54,9 @@ private:
     int marqueeAvailableWidth_{0};
     bool marqueeActive_{false};
     bool clockActive_{false};
+    bool overspeedBorderActive_{false};
+    uint8_t previousBorderMask_{0};
+    bool anyRegionRenderedThisFrame_{false};
     bool firstFrame_{true};
 };
 
