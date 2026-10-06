@@ -4,6 +4,8 @@
 #include "esp_err.h"
 #include "freertos/FreeRTOS.h"
 #include "sdkconfig.h"
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
 
 namespace waze_hud {
@@ -26,10 +28,24 @@ struct DeviceSettings {
     bool mirrorHud{false};
     bool rotateDisplay{false};
     int8_t overspeedOffsetKmh{0};
+    int8_t speedOffsetKmh{0};
+    int8_t speedOffsetPercent{0};
     int8_t offsetX{0};
     int8_t offsetY{0};
-    uint32_t revision{9};
+    uint32_t revision{10};
 };
+
+inline int adjustedSpeed(int rawSpeed, const DeviceSettings &settings) {
+    if (rawSpeed <= 0) return 0;
+    if (settings.speedOffsetKmh != 0) {
+        return std::clamp(rawSpeed + static_cast<int>(settings.speedOffsetKmh), 0, 999);
+    }
+    if (settings.speedOffsetPercent != 0) {
+        const float adjusted = rawSpeed * (100.0f + static_cast<float>(settings.speedOffsetPercent)) / 100.0f;
+        return std::clamp(static_cast<int>(std::round(adjusted)), 0, 999);
+    }
+    return std::clamp(rawSpeed, 0, 999);
+}
 
 using HlpSendLine = void (*)(const char *line, void *context);
 
