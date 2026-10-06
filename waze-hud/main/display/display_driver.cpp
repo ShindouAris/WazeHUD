@@ -19,6 +19,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
+#include "config/device_config.h"
 #include <algorithm>
 
 namespace waze_hud {
@@ -304,6 +305,12 @@ esp_err_t DisplayDriver::init() {
         kTag, "ILI9341 panel IO creation failed");
     io_ = io;
 
+    const auto initialSettings = DeviceConfig::instance().snapshot();
+    currentBacklightPin_ = initialSettings.backlightPin;
+    currentInvertColor_ = initialSettings.invertColor;
+    currentColorBgr_ = initialSettings.colorBgr;
+    currentBrightness_ = initialSettings.brightness;
+
     ili9341_vendor_config_t vendorConfig{};
     vendorConfig.init_cmds = ili9341_lcd_init_vendor;
     vendorConfig.init_cmds_size =
@@ -311,7 +318,7 @@ esp_err_t DisplayDriver::init() {
     esp_lcd_panel_dev_config_t panelConfig{};
     // TFT reset is tied to the ESP32 EN signal on the resistive CYD revision.
     panelConfig.reset_gpio_num = -1;
-    panelConfig.rgb_ele_order = LCD_RGB_ELEMENT_ORDER_BGR;
+    panelConfig.rgb_ele_order = currentColorBgr_ ? LCD_RGB_ELEMENT_ORDER_BGR : LCD_RGB_ELEMENT_ORDER_RGB;
     panelConfig.bits_per_pixel = 16;
     panelConfig.vendor_config = &vendorConfig;
     esp_lcd_panel_handle_t panel = nullptr;
@@ -320,7 +327,7 @@ esp_err_t DisplayDriver::init() {
     panel_ = panel;
     ESP_RETURN_ON_ERROR(esp_lcd_panel_reset(panel), kTag, "ILI9341 software reset failed");
     ESP_RETURN_ON_ERROR(esp_lcd_panel_init(panel), kTag, "ILI9341 initialization failed");
-    ESP_RETURN_ON_ERROR(esp_lcd_panel_invert_color(panel, true), kTag,
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_invert_color(panel, currentInvertColor_), kTag,
                         "ILI9341 inversion setup failed");
     ESP_RETURN_ON_ERROR(esp_lcd_panel_disp_on_off(panel, true), kTag,
                         "ILI9341 display enable failed");
@@ -389,7 +396,11 @@ esp_err_t DisplayDriver::init() {
     timer.clk_cfg = LEDC_AUTO_CLK;
     ESP_RETURN_ON_ERROR(ledc_timer_config(&timer), kTag, "backlight timer failed");
     ledc_channel_config_t channel{};
+#if CONFIG_WAZE_HUD_DISPLAY_CYD_28
+    channel.gpio_num = static_cast<gpio_num_t>(currentBacklightPin_);
+#else
     channel.gpio_num = kBacklight;
+#endif
     channel.speed_mode = LEDC_LOW_SPEED_MODE;
     channel.channel = LEDC_CHANNEL_0;
     channel.intr_type = LEDC_INTR_DISABLE;
@@ -510,10 +521,58 @@ esp_err_t DisplayDriver::drawRegion(const Rect &region, uint16_t *pixels) {
 }
 
 esp_err_t DisplayDriver::setBrightness(uint8_t percent) {
+    currentBrightness_ = percent;
     percent = percent > 100 ? 100 : percent;
     const uint32_t duty = (1023U * percent) / 100U;
     ESP_RETURN_ON_ERROR(ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, duty), kTag, "brightness duty failed");
     return ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
+}
+
+esp_err_t DisplayDriver::setInvertColor(bool invert) {
+#if CONFIG_WAZE_HUD_DISPLAY_CYD_28
+    if (invert == currentInvertColor_) return ESP_OK;
+    ESP_RETURN_ON_FALSE(ready_ && panel_ != nullptr, ESP_ERR_INVALID_STATE, kTag, "Display is not ready");
+    currentInvertColor_ = invert;
+    ESP_LOGI(kTag, "Setting LCD invert color to %d", invert);
+    return esp_lcd_panel_invert_color(static_cast<esp_lcd_panel_handle_t>(panel_), invert);
+#else
+    return ESP_OK;
+#endif
+}
+
+esp_err_t DisplayDriver::setColorBgr(bool bgr) {
+#if CONFIG_WAZE_HUD_DISPLAY_CYD_28
+    if (bgr == currentColorBgr_) return ESP_OK;
+    ESP_RETURN_ON_FALSE(ready_ && io_ != nullptr, ESP_ERR_INVALID_STATE, kTag, "Display IO is not ready");
+    currentColorBgr_ = bgr;
+    ESP_LOGI(kTag, "Setting LCD color order to %s", bgr ? "BGR" : "RGB");
+    const uint8_t madctl = bgr ? 0x08 : 0x00;
+    return esp_lcd_panel_io_tx_param(static_cast<esp_lcd_panel_io_handle_t>(io_), 0x36, &madctl, 1);
+#else
+    return ESP_OK;
+#endif
+}
+
+esp_err_t DisplayDriver::setBacklightPin(int pin) {
+#if CONFIG_WAZE_HUD_DISPLAY_CYD_28
+    if (pin == currentBacklightPin_) return ESP_OK;
+    ESP_RETURN_ON_FALSE(ready_, ESP_ERR_INVALID_STATE, kTag, "Display is not ready");
+    ESP_LOGI(kTag, "Changing backlight pin from %d to %d", currentBacklightPin_, pin);
+    ledc_stop(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 0);
+    gpio_reset_pin(static_cast<gpio_num_t>(currentBacklightPin_));
+    currentBacklightPin_ = pin;
+    ledc_channel_config_t channel{};
+    channel.gpio_num = static_cast<gpio_num_t>(currentBacklightPin_);
+    channel.speed_mode = LEDC_LOW_SPEED_MODE;
+    channel.channel = LEDC_CHANNEL_0;
+    channel.intr_type = LEDC_INTR_DISABLE;
+    channel.timer_sel = LEDC_TIMER_0;
+    channel.duty = 0;
+    ESP_RETURN_ON_ERROR(ledc_channel_config(&channel), kTag, "backlight channel reconfigure failed");
+    return setBrightness(currentBrightness_);
+#else
+    return ESP_OK;
+#endif
 }
 
 esp_err_t DisplayDriver::setOrientation(bool mirrored, bool rotated180) {

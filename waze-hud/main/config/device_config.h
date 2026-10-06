@@ -15,6 +15,9 @@ struct DeviceSettings {
     uint8_t brightness{70};
 #if CONFIG_WAZE_HUD_DISPLAY_CYD_28
     bool autoBrightness{true};
+    bool invertColor{true};
+    bool colorBgr{true};
+    uint8_t backlightPin{21};
 #endif
     UiTheme theme{UiTheme::Auto};
     SpeedDisplayMode speedDisplayMode{SpeedDisplayMode::CurrentPrimary};
@@ -24,7 +27,7 @@ struct DeviceSettings {
     int8_t overspeedOffsetKmh{0};
     int8_t offsetX{0};
     int8_t offsetY{0};
-    uint32_t revision{6};
+    uint32_t revision{8};
 };
 
 using HlpSendLine = void (*)(const char *line, void *context);
