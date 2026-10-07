@@ -57,7 +57,7 @@ Maneuver maneuverValue(int value) {
 
 AlertKind alertValue(int value) {
     if (value == 0) return AlertKind::None;
-    if (value > 0 && value <= 74) return static_cast<AlertKind>(value);
+    if (value > 0 && value <= 75) return static_cast<AlertKind>(value);
     return value > 0 ? AlertKind::Hazard : AlertKind::None;
 }
 
