@@ -11,3 +11,5 @@ waze-hud-link-sdk-ai-bundle.md
 managed_components/
 sdkconfig.35**
 build-**
+artifact/
+sdkconfig.**
