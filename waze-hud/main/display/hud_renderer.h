@@ -15,37 +15,22 @@ public:
     esp_err_t init();
     void render(const HudState &state, const DeviceSettings &settings,
                 const SystemStatusSnapshot &systemStatus);
-    bool animationActive() const { return marqueeActive_ || clockActive_; }
+    bool animationActive() const { return false; }
 
 private:
-    void renderRegion(const Rect &region, const HudState &state, const DeviceSettings &settings,
-                      const SystemStatusSnapshot &systemStatus);
-    void renderSystemStatus(Canvas &canvas, const Rect &region,
-                            const SystemStatusSnapshot &systemStatus,
+    void renderWaiting(Canvas &canvas);
+    void renderSystemStatus(Canvas &canvas, const SystemStatusSnapshot &systemStatus,
                             const DeviceSettings &settings);
-    void renderMainIndicators(Canvas &canvas, const Rect &region,
-                              const SystemStatusSnapshot &systemStatus);
-    void renderStatus(Canvas &canvas, const Rect &region, const HudState &state, const DeviceSettings &settings);
-    void renderLargeSpeedLimit(Canvas &canvas, const Rect &region, const HudState &state);
-    void renderManeuver(Canvas &canvas, const HudState &state, const DeviceSettings &settings);
-    void renderSpeed(Canvas &canvas, const HudState &state, const DeviceSettings &settings);
-    void renderLimits(Canvas &canvas, const HudState &state, const DeviceSettings &settings);
-    void renderAlerts(Canvas &canvas, const HudState &state, const DeviceSettings &settings);
-    void renderStreet(Canvas &canvas, const HudState &state, const DeviceSettings &settings);
+    void renderSpeedLimitSign(Canvas &canvas, int centerX, int centerY, int radius, int speedLimit);
+    void renderMinSpeedSign(Canvas &canvas, int centerX, int centerY, int radius, int minSpeed);
+    void renderAlertSide(Canvas &canvas, const AlertState &alert, int maxZoneWidth);
+    void renderManeuverSide(Canvas &canvas, Maneuver maneuver, int exit, int distanceM, int maxZoneWidth);
+    void renderSpeedSide(Canvas &canvas, int speedKmh, bool overspeed, int centerX, int centerY);
 
     uint16_t *buffer_{nullptr};
     HudState previous_{};
     DeviceSettings previousSettings_{};
     SystemStatusSnapshot previousSystemStatus_{};
-    int64_t renderedClockMinute_{INT64_MIN};
-    int8_t renderedClockPhase_{-1};
-    uint64_t marqueeEpochMs_{0};
-    int marqueeOffset_{0};
-    int marqueeRenderedOffset_{-1};
-    int marqueeTextWidth_{0};
-    int marqueeAvailableWidth_{0};
-    bool marqueeActive_{false};
-    bool clockActive_{false};
     bool firstFrame_{true};
 };
 

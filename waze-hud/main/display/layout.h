@@ -14,13 +14,8 @@ struct Rect {
 namespace layout {
 constexpr int Width = 320;
 constexpr int Height = 170;
-constexpr Rect Maneuver{0, 0, 85, 140};
-constexpr Rect Speed{85, 0, 80, 140};
-constexpr Rect Limits{165, 0, 60, 140};
-constexpr Rect Alerts{225, 0, 95, 140};
-constexpr Rect Street{0, 140, 320, 30};
 constexpr Rect Full{0, 0, 320, 170};
-constexpr int MaxRegionPixels = Alerts.width * Alerts.height;
+constexpr int MaxRegionPixels = Width * Height;
 }  // namespace layout
 
 }  // namespace waze_hud
