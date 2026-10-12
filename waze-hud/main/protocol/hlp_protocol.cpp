@@ -164,7 +164,7 @@ void HlpProtocol::sendDeviceDeclaration() {
         WAZE_HUD_FIRMWARE_VERSION "\","
         "\"proto\":[1],\"disp\":{\"w\":320,\"h\":170,\"color\":1},"
         "\"can\":[\"speed\",\"limit\",\"turn\",\"lanes\",\"street\",\"eta\",\"avgzone\",\"alerts\"],"
-        "\"want\":{\"rate\":4,\"fields\":[\"nav\",\"spd\",\"lim\",\"over\",\"trn\",\"trn2\","
+        "\"want\":{\"rate\":4,\"fields\":[\"nav\",\"spd\",\"lim\",\"min\",\"over\",\"trn\",\"trn2\","
         "\"dst\",\"exit\",\"lan\",\"st\",\"st2\",\"eta\",\"rmin\",\"rm\",\"rkm\",\"avg\",\"avgL\",\"avgR\","
         "\"avgP\",\"alr\",\"alrD\",\"alrV\",\"alrS\",\"alrM\",\"alrs\"]},\"transport\":\"ble\"}";
     static_assert(sizeof(declaration) <= HLP_MAX_FRAME, "dev declaration exceeds HLP frame limit");

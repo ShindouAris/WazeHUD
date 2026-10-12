@@ -13,8 +13,18 @@ namespace waze_hud {
 namespace {
 constexpr char kTag[] = "DISPLAY";
 
-bool hasAlert(const HudState &state) {
-    return state.nearestAlert.kind != AlertKind::None && state.nearestAlert.distanceM >= 0;
+AlertState primaryAlert(const HudState &state) {
+    if (state.noPassingZone) {
+        AlertState alert{};
+        alert.kind = AlertKind::NoPassing;
+        alert.distanceM = state.noPassingRemainingM;
+        return alert;
+    }
+    return state.nearestAlert;
+}
+
+bool hasAlert(const AlertState &alert) {
+    return alert.kind != AlertKind::None;
 }
 
 bool hasManeuver(const HudState &state) {
@@ -59,6 +69,33 @@ const assets::AlphaMask *maneuverAsset(Maneuver maneuver) {
     }
 }
 
+void arrowHead(Canvas &canvas, int x, int y, int dx, int dy) {
+    if (std::abs(dx) >= std::abs(dy)) {
+        const int sign = dx >= 0 ? 1 : -1;
+        canvas.line(x, y, x - sign * 9, y - 7, colors::White, 3);
+        canvas.line(x, y, x - sign * 9, y + 7, colors::White, 3);
+    } else {
+        const int sign = dy >= 0 ? 1 : -1;
+        canvas.line(x, y, x - 7, y - sign * 9, colors::White, 3);
+        canvas.line(x, y, x + 7, y - sign * 9, colors::White, 3);
+    }
+}
+
+void drawTurnFallback(Canvas &canvas, int x, int y, Maneuver maneuver) {
+    // f205389 primitive geometry, translated into the current 60px icon slot.
+    int endX, endY;
+    switch (maneuver) {
+        case Maneuver::SlightLeft: endX = 9; endY = 8; break;
+        case Maneuver::SlightRight: endX = 51; endY = 8; break;
+        case Maneuver::SharpLeft: endX = 2; endY = 39; break;
+        case Maneuver::SharpRight: endX = 58; endY = 39; break;
+        default: return;
+    }
+    canvas.line(x + 30, y + 58, x + 30, y + 35, colors::White, 5);
+    canvas.line(x + 30, y + 35, x + endX, y + endY, colors::White, 5);
+    arrowHead(canvas, x + endX, y + endY, endX - 30, endY - 35);
+}
+
 const assets::ColorBitmap *alertAsset(AlertKind kind, bool dominant) {
     const uint8_t code = static_cast<uint8_t>(kind);
     for (std::size_t index = 0; index < assets::kAlertAssetCount; ++index) {
@@ -75,6 +112,45 @@ const assets::ColorBitmap *trafficJamAsset(uint8_t severity, bool dominant) {
         case 4: case 5: return dominant ? &assets::kAlertTrafficJam4Large : &assets::kAlertTrafficJam4Small;
         default: return alertAsset(AlertKind::TrafficJam, dominant);
     }
+}
+
+const assets::ColorBitmap *alertBitmap(const AlertState &alert, bool dominant) {
+    if (alert.kind == AlertKind::SpeedDrop) {
+        for (std::size_t index = 0; index < assets::kSpeedLimitAssetCount; ++index) {
+            const auto &entry = assets::kSpeedLimitAssets[index];
+            if (entry.value != alert.valueKmh) continue;
+            return dominant ? entry.alertLarge : entry.alertSmall;
+        }
+        return nullptr;
+    }
+    const auto *bitmap = alert.kind == AlertKind::TrafficJam
+        ? trafficJamAsset(alert.trafficSeverity, dominant) : alertAsset(alert.kind, dominant);
+    return bitmap ? bitmap : alertAsset(AlertKind::Hazard, dominant);
+}
+
+void drawAlertIcon(Canvas &canvas, int x, int y, const AlertState &alert, bool dominant) {
+    const auto *bitmap = alertBitmap(alert, dominant);
+    if (bitmap && bitmap->pixels && bitmap->alpha) {
+        canvas.colorBitmap(x, y, *bitmap);
+        return;
+    }
+    const int radius = dominant ? 22 : 13;
+    const int cx = x + (bitmap ? bitmap->width / 2 : radius);
+    const int cy = y + (bitmap ? bitmap->height / 2 : radius);
+    if (alert.kind == AlertKind::SpeedDrop) {
+        canvas.fillCircle(cx, cy, radius, colors::White);
+        canvas.circle(cx, cy, radius, colors::Red, dominant ? 3 : 2);
+        char value[12];
+        std::snprintf(value, sizeof(value), "%d", alert.valueKmh);
+        const auto &font = dominant ? assets::kNumberMedium : assets::kNumberSmall;
+        canvas.fontText(cx - radius, cy - font.lineHeight / 2, value,
+                        font, colors::Black, 2 * radius, true);
+        return;
+    }
+    canvas.triangle(cx, cy - radius, cx - radius, cy + radius,
+                    cx + radius, cy + radius, colors::Amber);
+    canvas.fontText(cx - radius, cy - assets::kTextSmall.lineHeight / 2,
+                    "!", assets::kTextSmall, colors::Amber, 2 * radius, true);
 }
 
 uint16_t bleSignalColor(const SystemStatusSnapshot &status) {
@@ -191,10 +267,7 @@ void HudRenderer::renderMinSpeedSign(Canvas &canvas, int centerX, int centerY, i
 }
 
 void HudRenderer::renderAlertSide(Canvas &canvas, const AlertState &alert, int maxZoneWidth) {
-    const assets::ColorBitmap *bitmap = alert.kind == AlertKind::TrafficJam
-        ? trafficJamAsset(alert.trafficSeverity, true)
-        : alertAsset(alert.kind, true);
-    if (!bitmap) bitmap = alertAsset(AlertKind::Hazard, true);
+    const assets::ColorBitmap *bitmap = alertBitmap(alert, true);
 
     char distanceStr[16];
     formatDistance(alert.distanceM, distanceStr, sizeof(distanceStr));
@@ -206,9 +279,7 @@ void HudRenderer::renderAlertSide(Canvas &canvas, const AlertState &alert, int m
     const int totalW = iconW + gap + textW;
     const int startX = std::max(6, (maxZoneWidth - totalW) / 2);
 
-    if (bitmap && bitmap->pixels && bitmap->alpha) {
-        canvas.colorBitmap(startX, 85 - iconH / 2, *bitmap);
-    }
+    drawAlertIcon(canvas, startX, 85 - iconH / 2, alert, true);
     canvas.fontText(startX + iconW + gap, 85 - assets::kTextLarge.lineHeight / 2,
                     distanceStr, assets::kTextLarge, colors::White, textW + 10, false);
 }
@@ -235,6 +306,8 @@ void HudRenderer::renderManeuverSide(Canvas &canvas, Maneuver maneuver, int exit
             canvas.fontText(startX + iconW / 2 - 12, 85 - assets::kNumberSmall.lineHeight / 2,
                             exitStr, assets::kNumberSmall, colors::White, 24, true);
         }
+    } else {
+        drawTurnFallback(canvas, startX, iconY, maneuver);
     }
     canvas.fontText(startX + iconW + gap, 85 - assets::kTextLarge.lineHeight / 2,
                     distanceStr, assets::kTextLarge, colors::White, textW + 10, false);
@@ -258,6 +331,8 @@ void HudRenderer::render(const HudState &state, const DeviceSettings &settings,
         state.hasMinimumSpeed != previous_.hasMinimumSpeed ||
         state.minimumSpeedKmh != previous_.minimumSpeedKmh ||
         !(state.nearestAlert == previous_.nearestAlert) ||
+        state.noPassingZone != previous_.noPassingZone ||
+        state.noPassingRemainingM != previous_.noPassingRemainingM ||
         state.maneuver != previous_.maneuver ||
         state.maneuverDistanceM != previous_.maneuverDistanceM ||
         state.roundaboutExit != previous_.roundaboutExit ||
@@ -269,6 +344,18 @@ void HudRenderer::render(const HudState &state, const DeviceSettings &settings,
         settings.revision != previousSettings_.revision;
 
     if (!changed) return;
+
+    if (firstFrame_ || settings.revision != previousSettings_.revision) {
+        auto &display = DisplayDriver::instance();
+        if (display.setBrightness(settings.brightness) != ESP_OK) {
+            ESP_LOGE(kTag, "Failed to apply brightness");
+            return;
+        }
+        if (display.setOrientation(settings.mirrorHud, settings.rotateDisplay) != ESP_OK) {
+            ESP_LOGE(kTag, "Failed to apply orientation");
+            return;
+        }
+    }
 
     firstFrame_ = false;
     previous_ = state;
@@ -292,28 +379,26 @@ void HudRenderer::render(const HudState &state, const DeviceSettings &settings,
     }
 
     const bool overspeed = isOverspeed(state, settings);
+    const AlertState alert = primaryAlert(state);
 
     if (isDualSpeedLimit(state)) {
         // Case 3: Dual speed limits (Max limit on left, Min limit on right, Alert/Maneuver in center)
         renderSpeedLimitSign(canvas, 65, 85, 55, state.speedLimitKmh);
         renderMinSpeedSign(canvas, 255, 85, 55, state.minimumSpeedKmh);
 
-        if (hasAlert(state)) {
-            const assets::ColorBitmap *bitmap = state.nearestAlert.kind == AlertKind::TrafficJam
-                ? trafficJamAsset(state.nearestAlert.trafficSeverity, false)
-                : alertAsset(state.nearestAlert.kind, false);
-            if (!bitmap) bitmap = alertAsset(AlertKind::Hazard, false);
-
-            if (bitmap && bitmap->pixels && bitmap->alpha) {
-                canvas.colorBitmap(160 - bitmap->width / 2, 48, *bitmap);
-            }
+        if (hasAlert(alert)) {
+            const assets::ColorBitmap *bitmap = alertBitmap(alert, false);
+            drawAlertIcon(canvas, 160 - (bitmap ? bitmap->width / 2 : 13), 48,
+                          alert, false);
             char distanceStr[16];
-            formatDistance(state.nearestAlert.distanceM, distanceStr, sizeof(distanceStr));
+            formatDistance(alert.distanceM, distanceStr, sizeof(distanceStr));
             canvas.fontText(120, 84, distanceStr, assets::kTextSmall, colors::White, 80, true);
         } else if (hasManeuver(state)) {
             const assets::AlphaMask *mask = maneuverAsset(state.maneuver);
             if (mask && mask->alpha) {
                 canvas.alphaMask(160 - mask->width / 2, 40, *mask, colors::White);
+            } else {
+                drawTurnFallback(canvas, 130, 40, state.maneuver);
             }
             char distanceStr[16];
             formatDistance(state.maneuverDistanceM, distanceStr, sizeof(distanceStr));
@@ -328,7 +413,7 @@ void HudRenderer::render(const HudState &state, const DeviceSettings &settings,
         }
     } else {
         // Standard 2-Zone Mode (Case 1, Case 2, Cruising)
-        const bool alertActive = hasAlert(state);
+        const bool alertActive = hasAlert(alert);
         const bool maneuverActive = hasManeuver(state);
 
         // Right Zone: Speed limit sign or current speed
@@ -342,7 +427,7 @@ void HudRenderer::render(const HudState &state, const DeviceSettings &settings,
         // Left Zone: Priority: Alert -> Maneuver -> Current Speed
         if (alertActive) {
             // Case 1: Alert + Distance
-            renderAlertSide(canvas, state.nearestAlert, 160);
+            renderAlertSide(canvas, alert, 160);
         } else if (maneuverActive) {
             // Case 2: Maneuver + Distance
             renderManeuverSide(canvas, state.maneuver, state.roundaboutExit,
